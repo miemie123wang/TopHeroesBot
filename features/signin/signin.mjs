@@ -283,6 +283,16 @@ async function getCurrentSignActivity(authedHeaders) {
     { headers: authedHeaders }
   );
 
+  for (const item of data.data.list) {
+  console.log(
+    item.biz_id,
+    item.name,
+    item.activity_type,
+    item.status,
+    item.activity_switch
+  );
+}
+
   if (!data?.data?.list) {
     throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
   }
