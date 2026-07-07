@@ -74,6 +74,26 @@ function getNicknameFromLoginData(loginData) {
   );
 }
 
+async function runWithConcurrency(items, concurrency, worker) {
+  const results = [];
+  let index = 0;
+
+  async function runner() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => runner()
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
 async function fetchJson(url, options = {}, retries = 2) {
   let lastError;
 
@@ -535,8 +555,17 @@ UID: ${maskUid(uids[0])}
 
   await randomSleep(5000, 10000);
 
-  for (let i = 1; i < uids.length; i++) {
-    const uid = uids[i];
+const CONCURRENCY = Number(process.env.CONCURRENCY || 1);
+
+logInfo(`並發數: ${CONCURRENCY}`);
+
+await runWithConcurrency(
+  uids.slice(1),
+  CONCURRENCY,
+  async (uid, index) => {
+    const realIndex = index + 1;
+
+    await randomSleep(3000, 8000);
 
     try {
       const result = await processUid(uid, activity);
@@ -549,7 +578,7 @@ UID: ${maskUid(uids[0])}
 
       const msg =
 `❌ Top Heroes 簽到失敗
-進度: ${i + 1}/${uids.length}
+進度: ${realIndex + 1}/${uids.length}
 UID: ${maskUid(uid)}
 Activity: ${activity.name} / ${activity.id}
 原因: ${err.message}`;
@@ -559,9 +588,8 @@ Activity: ${activity.name} / ${activity.id}
       logError(msg);
       await sendDiscord(msg);
     }
-
-    await randomSleep(5000, 10000);
   }
+);
 
   const summary =
 `✅ Top Heroes 簽到完成

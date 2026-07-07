@@ -1,11 +1,14 @@
 import * as readline from "readline";
 
-const BASE = "https://topheroes.store.kopglobal.com";
-const SITE_ID = 1028526;
-const PROJECT_ID = 1028637;
+import {
+    BASE,
+    SITE_ID,
+    PROJECT_ID,
+    env
+} from "../../core/config.mjs";
 
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
-const APPS_SCRIPT_KEY = process.env.APPS_SCRIPT_KEY;
+const APPS_SCRIPT_URL = env.APPS_SCRIPT_URL;
+const APPS_SCRIPT_KEY = env.APPS_SCRIPT_KEY;
 
 const headers = {
   "Content-Type": "application/json",
@@ -14,7 +17,10 @@ const headers = {
   "cookie": "lang=en"
 };
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+import {
+    sleep,
+    randomSleep
+} from "../../core/sleep.mjs";
 
 function maskUid(uid) {
   if (uid.length <= 4) return "****";
