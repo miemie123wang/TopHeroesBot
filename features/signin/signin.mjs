@@ -555,8 +555,8 @@ UID: ${maskUid(uids[0])}
 
   await randomSleep(5000, 10000);
 
-const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
-const STAGGER_MS = Number(process.env.STAGGER_MS || 2000);
+const CONCURRENCY = Number(process.env.CONCURRENCY || 2);
+const STAGGER_MS = Number(process.env.STAGGER_MS || 3000);
 
 logInfo(`並發數: ${CONCURRENCY}`);
 logInfo(`Worker 錯開啟動: ${STAGGER_MS}ms`);
