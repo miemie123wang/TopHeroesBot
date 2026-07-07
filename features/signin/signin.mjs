@@ -297,12 +297,19 @@ async function getCurrentSignActivity(authedHeaders) {
     throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
   }
 
-  const activity = data.data.list.find(
-    (item) =>
-      item.activity_type === 4 &&
-      item.status === 2 &&
-      item.activity_switch === 1
-  );
+const signActivities = data.data.list
+  .filter(item =>
+    item.activity_type === 4 &&
+    item.status === 2 &&
+    item.activity_switch === 1 &&
+    !/test/i.test(item.name) &&
+    !/常驻签到/.test(item.name)
+  )
+  .sort((a, b) => b.biz_id - a.biz_id);
+
+const activity =
+  signActivities.find(item => /正式/.test(item.name)) ||
+  signActivities[0];
 
   if (!activity) {
     throw new Error("沒有找到進行中的簽到活動");
