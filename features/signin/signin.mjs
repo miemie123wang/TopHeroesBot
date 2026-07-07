@@ -49,6 +49,27 @@ function getTodayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const LOGIN_START_INTERVAL_MS = Number(process.env.LOGIN_START_INTERVAL_MS || 2000);
+let nextLoginStartAt = 0;
+let loginStartGate = Promise.resolve();
+
+async function waitForLoginStartSlot(uid) {
+  const task = loginStartGate.then(async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, nextLoginStartAt - now);
+
+    if (waitMs > 0) {
+      logInfo(`[LOGIN WAIT] ${maskUid(uid)} ${waitMs}ms`);
+      await sleep(waitMs);
+    }
+
+    nextLoginStartAt = Date.now() + LOGIN_START_INTERVAL_MS;
+  });
+
+  loginStartGate = task.catch(() => {});
+  await task;
+}
+
 function getNicknameFromLoginData(loginData) {
   return (
     loginData?.data?.user?.nickname ||
@@ -235,6 +256,9 @@ async function login(uid, maxRetries = 6) {
       // 模拟真人操作
       await randomSleep(1000, 3000);
 
+      await waitForLoginStartSlot(uid);
+      logInfo(`[LOGIN START] ${maskUid(uid)} ${new Date().toISOString()}`);
+
       const loginRes = await fetch(`${BASE}/api/v2/store/login/player`, {
         method: "POST",
         headers,
@@ -270,6 +294,8 @@ async function login(uid, maxRetries = 6) {
       if (!token) {
         throw new Error(`沒有拿到 token (${nickname})`);
       }
+
+      logInfo(`[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()}`);
 
       return {
         nickname,
@@ -555,11 +581,12 @@ UID: ${maskUid(uids[0])}
 
   await randomSleep(5000, 10000);
 
-const CONCURRENCY = Number(process.env.CONCURRENCY || 2);
-const STAGGER_MS = Number(process.env.STAGGER_MS || 3000);
+const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
+const STAGGER_MS = Number(process.env.STAGGER_MS || 2000);
 
 logInfo(`並發數: ${CONCURRENCY}`);
 logInfo(`Worker 錯開啟動: ${STAGGER_MS}ms`);
+logInfo(`Login 開始間隔: ${LOGIN_START_INTERVAL_MS}ms`);
 
 await runWithConcurrency(
   uids.slice(1),
@@ -570,17 +597,12 @@ await runWithConcurrency(
     await randomSleep(3000, 8000);
 
     try {
-
-       logInfo(`[LOGIN START] ${uid} ${new Date().toISOString()}`);
- 
       const result = await processUid(uid, activity);
 
       logOk(
         `完成：${result.nickname}，補簽 ${result.makeupCount} 次，今天簽到：${result.todaySigned ? "是" : "否"}`
       );
-      logInfo(`[LOGIN OK] ${uid} ${new Date().toISOString()}`);
     } catch (err) {
-            logInfo(`[LOGIN FAIL] ${uid} ${new Date().toISOString()} ${err.message}`);
       stats.failed++;
 
       const msg =
