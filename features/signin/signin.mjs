@@ -59,22 +59,34 @@ function getNicknameFromLoginData(loginData) {
 }
 
 async function runWithConcurrency(items, concurrency, worker, staggerMs = 2000) {
-  const results = [];
-  let index = 0;
+  const safeConcurrency = Math.max(1, Number(concurrency) || 1);
+  const workerCount = Math.min(safeConcurrency, items.length);
+  const results = new Array(items.length);
+
+  const queue = items.map((item, index) => ({ item, index }));
 
   async function runner(workerId) {
-    if (workerId > 0) {
+    if (workerId > 0 && staggerMs > 0) {
       await sleep(workerId * staggerMs);
     }
 
-    while (index < items.length) {
-      const currentIndex = index++;
-      results[currentIndex] = await worker(items[currentIndex], currentIndex, workerId);
+    while (queue.length > 0) {
+      const task = queue.shift();
+      if (!task) break;
+
+      try {
+        results[task.index] = await worker(task.item, task.index, workerId);
+      } catch (err) {
+        results[task.index] = {
+          ok: false,
+          error: err
+        };
+      }
     }
   }
 
   const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
+    { length: workerCount },
     (_, workerId) => runner(workerId)
   );
 
