@@ -1,10 +1,13 @@
-const BASE = "https://topheroes.store.kopglobal.com";
-const SITE_ID = 1028526;
-const PROJECT_ID = 1028637;
+import {
+    BASE,
+    SITE_ID,
+    PROJECT_ID,
+    env
+} from "../../core/config.mjs";
 
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
-const APPS_SCRIPT_KEY = process.env.APPS_SCRIPT_KEY;
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+const APPS_SCRIPT_URL = env.APPS_SCRIPT_URL;
+const APPS_SCRIPT_KEY = env.APPS_SCRIPT_KEY;
+const DISCORD_WEBHOOK_URL = env.DISCORD_WEBHOOK_URL;
 
 const headers = {
   "Content-Type": "application/json",
@@ -14,11 +17,10 @@ const headers = {
   cookie: "lang=en"
 };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function randomSleep(min, max) {
-  return sleep(Math.floor(Math.random() * (max - min + 1)) + min);
-}
+import {
+    sleep,
+    randomSleep
+} from "../../core/sleep.mjs";
 
 function nowText() {
   return new Date().toLocaleString("zh-CN", {
