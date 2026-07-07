@@ -570,13 +570,17 @@ await runWithConcurrency(
     await randomSleep(3000, 8000);
 
     try {
+
+       logInfo(`[LOGIN START] ${uid} ${new Date().toISOString()}`);
+ 
       const result = await processUid(uid, activity);
 
       logOk(
         `完成：${result.nickname}，補簽 ${result.makeupCount} 次，今天簽到：${result.todaySigned ? "是" : "否"}`
       );
-      logInfo(`[LOGIN] ${uid} ${new Date().toISOString()}`);
+      logInfo(`[LOGIN OK] ${uid} ${new Date().toISOString()}`);
     } catch (err) {
+            logInfo(`[LOGIN FAIL] ${uid} ${new Date().toISOString()} ${err.message}`);
       stats.failed++;
 
       const msg =
