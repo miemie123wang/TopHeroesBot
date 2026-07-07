@@ -58,20 +58,24 @@ function getNicknameFromLoginData(loginData) {
   );
 }
 
-async function runWithConcurrency(items, concurrency, worker) {
+async function runWithConcurrency(items, concurrency, worker, staggerMs = 2000) {
   const results = [];
   let index = 0;
 
-  async function runner() {
+  async function runner(workerId) {
+    if (workerId > 0) {
+      await sleep(workerId * staggerMs);
+    }
+
     while (index < items.length) {
       const currentIndex = index++;
-      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      results[currentIndex] = await worker(items[currentIndex], currentIndex, workerId);
     }
   }
 
   const workers = Array.from(
     { length: Math.min(concurrency, items.length) },
-    () => runner()
+    (_, workerId) => runner(workerId)
   );
 
   await Promise.all(workers);
@@ -539,14 +543,16 @@ UID: ${maskUid(uids[0])}
 
   await randomSleep(5000, 10000);
 
-const CONCURRENCY = Number(process.env.CONCURRENCY || 1);
+const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
+const STAGGER_MS = Number(process.env.STAGGER_MS || 2000);
 
 logInfo(`並發數: ${CONCURRENCY}`);
+logInfo(`Worker 錯開啟動: ${STAGGER_MS}ms`);
 
 await runWithConcurrency(
   uids.slice(1),
   CONCURRENCY,
-  async (uid, index) => {
+  async (uid, index, workerId) => {
     const realIndex = index + 1;
 
     await randomSleep(3000, 8000);
@@ -563,6 +569,7 @@ await runWithConcurrency(
       const msg =
 `❌ Top Heroes 簽到失敗
 進度: ${realIndex + 1}/${uids.length}
+Worker: ${workerId}
 UID: ${maskUid(uid)}
 Activity: ${activity.name} / ${activity.id}
 原因: ${err.message}`;
@@ -572,7 +579,8 @@ Activity: ${activity.name} / ${activity.id}
       logError(msg);
       await sendDiscord(msg);
     }
-  }
+  },
+  STAGGER_MS
 );
 
   const summary =
