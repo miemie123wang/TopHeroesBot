@@ -1,0 +1,28 @@
+name: Top Heroes Redeem Code
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: '兌換碼'
+        required: true
+        type: string
+
+jobs:
+  redeem:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Redeem code
+        run: node features/redeem/redeem.mjs
+        env:
+          REDEEM_CODE: ${{ github.event.inputs.code }}
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}

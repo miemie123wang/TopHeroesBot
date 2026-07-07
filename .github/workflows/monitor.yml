@@ -1,0 +1,40 @@
+name: Check Gift Codes
+
+on:
+  repository_dispatch:
+    types: [cron-trigger]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm install
+
+      - name: Check and redeem
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}
+        run: node features/monitor/monitor.mjs
+
+      - name: Save last message ID
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add last_message_id.txt
+          git diff --staged --quiet || git commit -m "Update last message ID"
+          git pull --rebase
+          git push
