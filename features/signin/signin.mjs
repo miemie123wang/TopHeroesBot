@@ -575,6 +575,7 @@ await runWithConcurrency(
       logOk(
         `完成：${result.nickname}，補簽 ${result.makeupCount} 次，今天簽到：${result.todaySigned ? "是" : "否"}`
       );
+      logInfo(`[LOGIN] ${uid} ${new Date().toISOString()}`);
     } catch (err) {
       stats.failed++;
 
