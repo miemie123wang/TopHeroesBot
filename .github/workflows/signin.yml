@@ -23,4 +23,4 @@ jobs:
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
           APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          CONCURRENCY: 2
+          CONCURRENCY: 5

@@ -22,28 +22,12 @@ import {
     randomSleep
 } from "../../core/sleep.mjs";
 
-function nowText() {
-  return new Date().toLocaleString("zh-CN", {
-    timeZone: "America/Montreal",
-    hour12: false
-  });
-}
-
-function logInfo(message) {
-  console.log(`[${nowText()}] ℹ️ ${message}`);
-}
-
-function logOk(message) {
-  console.log(`[${nowText()}] ✅ ${message}`);
-}
-
-function logWarn(message) {
-  console.warn(`[${nowText()}] ⚠️ ${message}`);
-}
-
-function logError(message) {
-  console.error(`[${nowText()}] ❌ ${message}`);
-}
+import {
+  logInfo,
+  logOk,
+  logWarn,
+  logError
+} from "../../core/logger.mjs";
 
 const stats = {
   total: 0,
