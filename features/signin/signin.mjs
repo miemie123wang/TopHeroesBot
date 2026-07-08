@@ -335,7 +335,7 @@ const signActivities = data.data.list
   )
   .sort((a, b) => b.biz_id - a.biz_id);
 
-const activity = activities.find(a => Number(a.biz_id) === TARGET_SIGNIN_BIZ_ID);
+const activity = signActivities.find(a => Number(a.biz_id) === TARGET_SIGNIN_BIZ_ID);
 
   
 
