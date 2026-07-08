@@ -24,4 +24,4 @@ jobs:
           APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           CONCURRENCY: 2
-          STAGGER_MS: 0
+          STAGGER_MS: 1000
