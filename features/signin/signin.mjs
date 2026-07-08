@@ -9,6 +9,8 @@ const APPS_SCRIPT_URL = env.APPS_SCRIPT_URL;
 const APPS_SCRIPT_KEY = env.APPS_SCRIPT_KEY;
 const DISCORD_WEBHOOK_URL = env.DISCORD_WEBHOOK_URL;
 
+const TARGET_SIGNIN_BIZ_ID = 3304
+
 const headers = {
   "Content-Type": "application/json",
   accept: "application/json, text/plain, */*",
@@ -333,9 +335,9 @@ const signActivities = data.data.list
   )
   .sort((a, b) => b.biz_id - a.biz_id);
 
-const activity =
-  signActivities.find(item => /正式/.test(item.name)) ||
-  signActivities[0];
+const activity = activities.find(a => Number(a.biz_id) === TARGET_SIGNIN_BIZ_ID);
+
+  
 
   if (!activity) {
     throw new Error("沒有找到進行中的簽到活動");
