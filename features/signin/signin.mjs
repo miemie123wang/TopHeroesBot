@@ -33,16 +33,6 @@ async function getCurrentSignActivity(authedHeaders) {
     throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
   }
 
-  for (const item of activities) {
-    console.log(
-      item.biz_id,
-      item.name,
-      item.activity_type,
-      item.status,
-      item.activity_switch
-    );
-  }
-
   const now = Math.floor(Date.now() / 1000);
   const sevenDaysSeconds = 7 * 24 * 60 * 60;
 
