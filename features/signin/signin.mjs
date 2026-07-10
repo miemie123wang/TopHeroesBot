@@ -304,51 +304,76 @@ async function login(uid, maxRetries = 6) {
     `登入失敗（已重試 ${maxRetries} 次）：${lastError.message}`
   );
 }
+
 async function getCurrentSignActivity(authedHeaders) {
   const data = await fetchJson(
     `${BASE}/api/v2/store/sale/biz/list?project_id=${PROJECT_ID}&status=2`,
     { headers: authedHeaders }
   );
 
-  for (const item of data.data.list) {
-  console.log(
-    item.biz_id,
-    item.name,
-    item.activity_type,
-    item.status,
-    item.activity_switch
-  );
-}
+  const activities = data?.data?.list;
 
-  if (!data?.data?.list) {
+  if (!Array.isArray(activities)) {
     throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
   }
 
-const now=Math.floor(Date.now()/1000);
+  for (const item of activities) {
+    console.log(
+      item.biz_id,
+      item.name,
+      item.activity_type,
+      item.status,
+      item.activity_switch
+    );
+  }
 
-const signActivities=data.data.list
-  .filter(item=>Number(item.activity_type)===4)
-  .filter(item=>Number(item.status)===2)
-  .filter(item=>Number(item.activity_switch)===1)
-  .filter(item=>{
-    const start=Number(item.start_time||0);
-    const stop=Number(item.stop_time||item.cycle_stop_time||0);
-    return start&&stop&&now>=start&&now<=stop;
-  })
-  .filter(item=>{
-    const start=new Date((Number(item.start_time)+8*3600)*1000);
-    const stop=new Date((Number(item.stop_time||item.cycle_stop_time)+8*3600)*1000);
-    return start.getUTCDay()===1&&start.getUTCHours()===0&&start.getUTCMinutes()===0&&start.getUTCSeconds()===0&&stop.getUTCDay()===0&&stop.getUTCHours()===23&&stop.getUTCMinutes()===59&&stop.getUTCSeconds()===59;
-  })
-  .sort((a,b)=>Number(b.start_time)-Number(a.start_time));
+  const now = Math.floor(Date.now() / 1000);
+  const sevenDaysSeconds = 7 * 24 * 60 * 60;
 
-const activity=signActivities[0];
+  const signActivities = activities
+    .filter(item => Number(item.activity_type) === 4)
+    .filter(item => Number(item.status) === 2)
+    .filter(item => Number(item.activity_switch) === 1)
+    .filter(item => {
+      const start = Number(item.start_time || 0);
+      const stop = Number(item.stop_time || item.cycle_stop_time || 0);
 
-  
+      return start && stop && now >= start && now <= stop;
+    })
+    .filter(item => {
+      const start = Number(item.start_time || 0);
+      const stop = Number(item.stop_time || item.cycle_stop_time || 0);
+
+      if (!start || !stop) return false;
+
+      const durationSeconds = stop - start + 1;
+
+      const totalDays = Number(
+        item.rule?.sign_in_total_days ??
+        item.sign_in_total_days ??
+        0
+      );
+
+      return (
+        durationSeconds === sevenDaysSeconds &&
+        totalDays === 7
+      );
+    })
+    .sort(
+      (a, b) =>
+        Number(b.start_time || 0) -
+        Number(a.start_time || 0)
+    );
+
+  const activity = signActivities[0];
 
   if (!activity) {
-    throw new Error("沒有找到進行中的簽到活動");
+    throw new Error("沒有找到進行中的 7 天簽到活動");
   }
+
+  logInfo(
+    `已選擇簽到活動：${activity.name} / biz_id=${activity.biz_id}`
+  );
 
   return {
     id: activity.biz_id,
