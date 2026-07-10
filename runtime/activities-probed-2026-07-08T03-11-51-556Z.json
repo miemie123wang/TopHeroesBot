@@ -1,0 +1,88 @@
+[
+  {
+    "biz_id": 3304,
+    "name": "火鸡堡签到0706-正式",
+    "activity_type": 4,
+    "status": 2,
+    "activity_switch": 1,
+    "start_time": 1783303200,
+    "project_id": 1028637,
+    "probe": {
+      "ok": true,
+      "code": 1,
+      "message": "",
+      "days": 7,
+      "has_sign_in_days": 3,
+      "remain_appending_days": 1,
+      "available_days": [],
+      "signed_days": [
+        1,
+        2,
+        3
+      ]
+    }
+  },
+  {
+    "biz_id": 3010,
+    "name": "常驻签到20260518",
+    "activity_type": 4,
+    "status": 2,
+    "activity_switch": 1,
+    "start_time": 1773626400,
+    "project_id": 1028637,
+    "probe": {
+      "ok": true,
+      "code": 1,
+      "message": "",
+      "days": 7,
+      "has_sign_in_days": 0,
+      "remain_appending_days": 1,
+      "available_days": [
+        1
+      ],
+      "signed_days": []
+    }
+  },
+  {
+    "biz_id": 2569,
+    "name": "常驻签到20260309",
+    "activity_type": 4,
+    "status": 2,
+    "activity_switch": 1,
+    "start_time": 1773626400,
+    "project_id": 1028637,
+    "probe": {
+      "ok": true,
+      "code": 1,
+      "message": "",
+      "days": 7,
+      "has_sign_in_days": 0,
+      "remain_appending_days": 1,
+      "available_days": [
+        1
+      ],
+      "signed_days": []
+    }
+  },
+  {
+    "biz_id": 2299,
+    "name": "常驻签到20260116",
+    "activity_type": 4,
+    "status": 2,
+    "activity_switch": 1,
+    "start_time": 1768788000,
+    "project_id": 1028637,
+    "probe": {
+      "ok": true,
+      "code": 1,
+      "message": "",
+      "days": 7,
+      "has_sign_in_days": 0,
+      "remain_appending_days": 1,
+      "available_days": [
+        1
+      ],
+      "signed_days": []
+    }
+  }
+]

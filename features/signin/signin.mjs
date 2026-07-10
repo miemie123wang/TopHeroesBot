@@ -9,7 +9,6 @@ const APPS_SCRIPT_URL = env.APPS_SCRIPT_URL;
 const APPS_SCRIPT_KEY = env.APPS_SCRIPT_KEY;
 const DISCORD_WEBHOOK_URL = env.DISCORD_WEBHOOK_URL;
 
-const TARGET_SIGNIN_BIZ_ID = 3304
 
 const headers = {
   "Content-Type": "application/json",
@@ -325,17 +324,25 @@ async function getCurrentSignActivity(authedHeaders) {
     throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
   }
 
-const signActivities = data.data.list
-  .filter(item =>
-    item.activity_type === 4 &&
-    item.status === 2 &&
-    item.activity_switch === 1 &&
-    !/test/i.test(item.name) &&
-    !/常驻签到/.test(item.name)
-  )
-  .sort((a, b) => b.biz_id - a.biz_id);
+const now=Math.floor(Date.now()/1000);
 
-const activity = signActivities.find(a => Number(a.biz_id) === TARGET_SIGNIN_BIZ_ID);
+const signActivities=data.data.list
+  .filter(item=>Number(item.activity_type)===4)
+  .filter(item=>Number(item.status)===2)
+  .filter(item=>Number(item.activity_switch)===1)
+  .filter(item=>{
+    const start=Number(item.start_time||0);
+    const stop=Number(item.stop_time||item.cycle_stop_time||0);
+    return start&&stop&&now>=start&&now<=stop;
+  })
+  .filter(item=>{
+    const start=new Date((Number(item.start_time)+8*3600)*1000);
+    const stop=new Date((Number(item.stop_time||item.cycle_stop_time)+8*3600)*1000);
+    return start.getUTCDay()===1&&start.getUTCHours()===0&&start.getUTCMinutes()===0&&start.getUTCSeconds()===0&&stop.getUTCDay()===0&&stop.getUTCHours()===23&&stop.getUTCMinutes()===59&&stop.getUTCSeconds()===59;
+  })
+  .sort((a,b)=>Number(b.start_time)-Number(a.start_time));
+
+const activity=signActivities[0];
 
   
 
