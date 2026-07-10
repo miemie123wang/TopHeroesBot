@@ -5,8 +5,11 @@ import {
   DEBUG_UID
 } from "../core/config.mjs";
 
-import { sleep, randomSleep } from "../core/sleep.mjs";
+import { fetchJson } from "../core/api.mjs";
+import { login } from "../core/auth.mjs";
+import { sleep } from "../core/sleep.mjs";
 import { logInfo, logOk, logWarn, logError } from "../core/logger.mjs";
+import { maskUid } from "../core/utils.mjs";
 
 const TEST_UID = DEBUG_UID;
 
@@ -17,103 +20,6 @@ const TEST_BIZ_ID = 3010;
 // 确认 available_days 有值以后，再改成 true。
 const REALLY_RECEIVE = true;
 
-const headers = {
-  "Content-Type": "application/json",
-  accept: "application/json, text/plain, */*",
-  "user-agent":
-    "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36",
-  cookie: "lang=en"
-};
-
-function maskUid(uid) {
-  uid = String(uid);
-  if (uid.length <= 4) return "****";
-  return uid.slice(0, 2) + "*".repeat(uid.length - 4) + uid.slice(-2);
-}
-
-async function fetchJson(url, options = {}) {
-  const res = await fetch(url, options);
-  const text = await res.text();
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`回傳不是 JSON，HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${JSON.stringify(data).slice(0, 500)}`);
-  }
-
-  return { data, res };
-}
-
-async function preCheckPlayer(uid) {
-  const url =
-    `${BASE}/api/v2/store/player-info` +
-    `?project_id=${PROJECT_ID}` +
-    `&player_id=${encodeURIComponent(uid)}` +
-    `&site_id=${SITE_ID}`;
-
-  try {
-    await fetch(url, { method: "GET", headers });
-  } catch {}
-}
-
-function getNickname(loginData) {
-  return (
-    loginData?.data?.user?.nickname ||
-    loginData?.data?.nickname ||
-    "Unknown"
-  );
-}
-
-async function login(uid) {
-  await preCheckPlayer(uid);
-  await randomSleep(1000, 2500);
-
-  logInfo(`[LOGIN START] ${maskUid(uid)} ${new Date().toISOString()}`);
-
-  const { data: loginData, res } = await fetchJson(
-    `${BASE}/api/v2/store/login/player`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        site_id: SITE_ID,
-        player_id: uid,
-        server_id: "",
-        device: "pc"
-      })
-    }
-  );
-
-  if (loginData.code !== 1) {
-    throw new Error(`登錄失敗: ${loginData.message || JSON.stringify(loginData)}`);
-  }
-
-  const token =
-    res.headers.get("authorization") ||
-    res.headers.get("Authorization");
-
-  if (!token) {
-    throw new Error("沒有拿到 authorization token");
-  }
-
-  const nickname = getNickname(loginData);
-
-  logInfo(`[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()} (${nickname})`);
-
-  return {
-    nickname,
-    authedHeaders: {
-      ...headers,
-      authorization: token
-    }
-  };
-}
-
 async function getActivityInfo(authedHeaders, bizId) {
   const url =
     `${BASE}/api/v2/store/sale/biz/list` +
@@ -122,7 +28,7 @@ async function getActivityInfo(authedHeaders, bizId) {
     `&biz_id=${bizId}` +
     `&status=2`;
 
-  const { data } = await fetchJson(url, { headers: authedHeaders });
+  const data = await fetchJson(url, { headers: authedHeaders });
   return data?.data?.list?.[0] || null;
 }
 
@@ -134,7 +40,7 @@ async function getSignInData(authedHeaders, activityId) {
     `&site_id=${SITE_ID}` +
     `&page_no=1`;
 
-  const { data } = await fetchJson(url, { headers: authedHeaders });
+  const data = await fetchJson(url, { headers: authedHeaders });
 
   if (!data?.data?.sign_in_list) {
     throw new Error(`沒有簽到資料: ${JSON.stringify(data).slice(0, 500)}`);
@@ -167,7 +73,7 @@ function getTodayItem(signInData) {
 }
 
 async function receiveTodaySignIn(authedHeaders, activityId) {
-  const { data } = await fetchJson(
+  const data = await fetchJson(
     `${BASE}/api/v2/store/sale/biz/sign-in/gift/receive`,
     {
       method: "POST",
@@ -214,7 +120,7 @@ async function main() {
   logInfo(`測試 Activity: ${TEST_BIZ_ID}`);
   logWarn(`REALLY_RECEIVE = ${REALLY_RECEIVE}`);
 
-  const loginInfo = await login(TEST_UID);
+  const loginInfo = await login(TEST_UID, { maxRetries: 1 });
   logOk(`登入成功: ${loginInfo.nickname}`);
 
   const activity = await getActivityInfo(loginInfo.authedHeaders, TEST_BIZ_ID);
