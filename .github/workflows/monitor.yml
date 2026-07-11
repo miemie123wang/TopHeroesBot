@@ -4,6 +4,11 @@ on:
   repository_dispatch:
     types: [cron-trigger]
   workflow_dispatch:
+    inputs:
+      code:
+        description: '手動兌換碼（留空則檢查 Discord）'
+        required: false
+        type: string
 
 jobs:
   check:
@@ -28,6 +33,7 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
           APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}
+          MANUAL_CODE: ${{ github.event.inputs.code }}
         run: node features/monitor/monitor.mjs
 
       - name: Save last message ID

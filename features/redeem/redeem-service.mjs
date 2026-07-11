@@ -117,10 +117,26 @@ export async function redeemForUid(uid, code, options = {}) {
   }
 }
 
+function isCodeWideFailure(result) {
+  if (!result || result.success) return false;
+
+  const message = String(result.message || "").toLowerCase();
+
+  return [
+    "redemption code expired",
+    "code expired",
+    "invalid redemption code",
+    "redemption code invalid",
+    "activity not found",
+    "code not found"
+  ].some(text => message.includes(text));
+}
+
 export async function redeemAllUids(code, uids, options = {}) {
   const {
     validateFirst = false,
     firstFailureStops = validateFirst,
+    stopOnCodeWideFailure = true,
     beforeStart,
     onFirstFailure,
     afterComplete,
@@ -168,6 +184,25 @@ export async function redeemAllUids(code, uids, options = {}) {
 
     const result = await redeemForUid(uids[index], code, redeemOptions);
     results.push(result);
+
+    if (stopOnCodeWideFailure && isCodeWideFailure(result)) {
+      console.log(`停止後續帳號：${result.message}`);
+
+      const summary = {
+        total: uids.length,
+        success: results.filter(item => item.success).length,
+        failed: results.filter(item => !item.success).length,
+        stoppedEarly: true,
+        stopReason: "code-wide-failure",
+        results
+      };
+
+      if (onFirstFailure && results.length == 1) {
+        await onFirstFailure({ code, result });
+      }
+
+      return summary;
+    }
   }
 
   const summary = {
