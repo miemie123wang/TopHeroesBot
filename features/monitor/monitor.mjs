@@ -180,9 +180,8 @@ async function main() {
 
     const result = await redeemAllUids(code, uids, {
       validateFirst: true,
-      firstFailureStops: true,
-      accountDelayMin: 3000,
-      accountDelayMax: 6000,
+      concurrency: Number(process.env.REDEEM_CONCURRENCY || 2),
+      staggerMs: Number(process.env.REDEEM_STAGGER_MS || 2000),
       firstRedeemOptions: {
         indent: "  ",
         loginOptions: { device: "mobile" },
@@ -198,16 +197,33 @@ async function main() {
       beforeStart: async () => {
         await sendNotification(`🎁 發現兌換碼：\`${code}\`\n正在嘗試網頁兌換，請稍候...`);
       },
-      onFirstFailure: async () => {
-        await sendNotification(`🎮 \`${code}\` 網頁兌換失敗，請手動在遊戲內兌換！`);
+      onFirstFailure: async ({ result, codeWide }) => {
+        if (codeWide) {
+          await sendNotification(
+            `⛔ \`${code}\` 為全局無效碼，已停止後續帳號。\n原因：${result.message}`
+          );
+          return;
+        }
+
+        console.log(`首個帳號為帳號級失敗，繼續其他帳號：${result.message}`);
       },
-      afterComplete: async () => {
+      afterComplete: async ({ summary }) => {
         const time = new Date().toLocaleString("zh-CN", {
           timeZone: "America/Toronto"
         });
 
-        await sendNotification(`✅ 網頁碼兌換完成！\n碼：\`${code}\`\n時間：${time}`);
-        console.log("全部兌換完成 ✓");
+        const status = summary.stoppedEarly ? "⚠️ 網頁碼兌換提前停止" : "✅ 網頁碼兌換完成";
+
+        await sendNotification(
+          `${status}！\n` +
+          `碼：\`${code}\`\n` +
+          `成功：${summary.success}\n` +
+          `失敗：${summary.failed}\n` +
+          `跳過：${summary.skipped}\n` +
+          `已嘗試：${summary.attempted}/${summary.total}\n` +
+          `時間：${time}`
+        );
+        console.log("兌換流程完成 ✓");
       }
     });
 

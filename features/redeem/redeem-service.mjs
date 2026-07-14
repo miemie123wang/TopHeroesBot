@@ -2,7 +2,7 @@ import { BASE, SITE_ID, PROJECT_ID, MERCHANT_ID } from "../../core/config.mjs";
 import { gameHeaders } from "../../core/api.mjs";
 import { login } from "../../core/auth.mjs";
 import { sleep, randomSleep } from "../../core/sleep.mjs";
-import { maskUid } from "../../core/utils.mjs";
+import { maskUid, runWithConcurrency } from "../../core/utils.mjs";
 
 async function reportLoginShow() {
   await fetch(`${BASE}/api/v2/store/point/reporting`, {
@@ -18,6 +18,39 @@ async function reportLoginShow() {
       platform: "android"
     })
   });
+}
+
+export function classifyRedeemFailure(message) {
+  const normalized = String(message || "").trim().toLowerCase();
+
+  const globalRules = [
+    ["CODE_EXPIRED", ["redemption code expired", "code expired"]],
+    ["INVALID_CODE", ["invalid redemption code", "redemption code invalid", "invalid code"]],
+    ["CODE_NOT_FOUND", ["redemption code not found", "code not found"]],
+    ["ACTIVITY_NOT_FOUND", ["activity not found"]]
+  ];
+
+  for (const [code, patterns] of globalRules) {
+    if (patterns.some(pattern => normalized.includes(pattern))) {
+      return { scope: "global", code };
+    }
+  }
+
+  const accountRules = [
+    ["ALREADY_REDEEMED", ["already redeemed", "already been redeemed"]],
+    ["PERSONAL_LIMIT", [
+      "personal redemption limit reached",
+      "personal redemption limit reached for this cdkey"
+    ]]
+  ];
+
+  for (const [code, patterns] of accountRules) {
+    if (patterns.some(pattern => normalized.includes(pattern))) {
+      return { scope: "account", code };
+    }
+  }
+
+  return { scope: "account", code: "ACCOUNT_OR_UNKNOWN_FAILURE" };
 }
 
 async function redeemCode(authedHeaders, code) {
@@ -36,17 +69,32 @@ async function redeemCode(authedHeaders, code) {
   try {
     data = JSON.parse(text);
   } catch {
+    const message = `兌換返回不是 JSON: ${text}`;
     return {
       success: false,
-      message: `兌換返回不是 JSON: ${text}`,
-      data: null
+      message,
+      data: null,
+      ...classifyRedeemFailure(message)
     };
   }
 
+  if (data.code === 1) {
+    return {
+      success: true,
+      message: data.message || text,
+      data,
+      scope: null,
+      code: "SUCCESS"
+    };
+  }
+
+  const message = data.message || text;
+
   return {
-    success: data.code === 1,
-    message: data.message || text,
-    data
+    success: false,
+    message,
+    data,
+    ...classifyRedeemFailure(message)
   };
 }
 
@@ -94,7 +142,7 @@ export async function redeemForUid(uid, code, options = {}) {
     if (result.success) {
       console.log(`${indent}兌換成功 ✓${separator ? ` (${code})` : ""}`);
     } else {
-      console.error(`${indent}兌換失敗: ${result.message}`);
+      console.error(`${indent}兌換失敗 [${result.scope}/${result.code}]: ${result.message}`);
     }
 
     return {
@@ -112,42 +160,52 @@ export async function redeemForUid(uid, code, options = {}) {
       uid,
       nickname: null,
       message: err.message,
-      error: err
+      error: err,
+      scope: "account",
+      code: "LOGIN_OR_REQUEST_FAILURE"
     };
   }
 }
 
-function isCodeWideFailure(result) {
-  if (!result || result.success) return false;
+export function isCodeWideFailure(result) {
+  return Boolean(result && !result.success && result.scope === "global");
+}
 
-  const message = String(result.message || "").toLowerCase();
+function buildSummary(uids, results, options = {}) {
+  const attemptedResults = results.filter(Boolean);
+  const attempted = attemptedResults.filter(item => !item.skipped).length;
+  const skipped = attemptedResults.filter(item => item.skipped).length;
 
-  return [
-    "redemption code expired",
-    "code expired",
-    "invalid redemption code",
-    "redemption code invalid",
-    "activity not found",
-    "code not found"
-  ].some(text => message.includes(text));
+  return {
+    total: uids.length,
+    attempted,
+    skipped,
+    success: attemptedResults.filter(item => item.success).length,
+    failed: attemptedResults.filter(item => !item.success && !item.skipped).length,
+    stoppedEarly: Boolean(options.stoppedEarly),
+    stopReason: options.stopReason || null,
+    stopResult: options.stopResult || null,
+    results: attemptedResults
+  };
 }
 
 export async function redeemAllUids(code, uids, options = {}) {
   const {
-    validateFirst = false,
-    firstFailureStops = validateFirst,
+    validateFirst = true,
     stopOnCodeWideFailure = true,
     beforeStart,
     onFirstFailure,
     afterComplete,
-    accountDelayMin = 3000,
-    accountDelayMax = 6000,
+    concurrency = Number(process.env.REDEEM_CONCURRENCY || 2),
+    staggerMs = Number(process.env.REDEEM_STAGGER_MS || 2000),
+    accountDelayMin = 0,
+    accountDelayMax = 0,
     redeemOptions = {},
     firstRedeemOptions = redeemOptions
   } = options;
 
   if (!Array.isArray(uids) || uids.length === 0) {
-    return { total: 0, success: 0, failed: 0, stoppedEarly: false, results: [] };
+    return buildSummary([], []);
   }
 
   if (beforeStart) {
@@ -155,63 +213,88 @@ export async function redeemAllUids(code, uids, options = {}) {
   }
 
   const results = [];
-  let startIndex = 0;
+  let remainingUids = uids;
 
   if (validateFirst) {
     const firstResult = await redeemForUid(uids[0], code, firstRedeemOptions);
     results.push(firstResult);
-    startIndex = 1;
+    remainingUids = uids.slice(1);
 
-    if (!firstResult.success && firstFailureStops) {
-      if (onFirstFailure) {
-        await onFirstFailure({ code, result: firstResult });
-      }
-
-      return {
-        total: uids.length,
-        success: 0,
-        failed: 1,
-        stoppedEarly: true,
-        results
-      };
-    }
-  }
-
-  for (let index = startIndex; index < uids.length; index++) {
-    if (index > 0) {
-      await randomSleep(accountDelayMin, accountDelayMax);
+    if (!firstResult.success && onFirstFailure) {
+      await onFirstFailure({
+        code,
+        result: firstResult,
+        codeWide: isCodeWideFailure(firstResult)
+      });
     }
 
-    const result = await redeemForUid(uids[index], code, redeemOptions);
-    results.push(result);
-
-    if (stopOnCodeWideFailure && isCodeWideFailure(result)) {
-      console.log(`停止後續帳號：${result.message}`);
-
-      const summary = {
-        total: uids.length,
-        success: results.filter(item => item.success).length,
-        failed: results.filter(item => !item.success).length,
+    if (stopOnCodeWideFailure && isCodeWideFailure(firstResult)) {
+      console.log(`停止後續帳號：${firstResult.message}`);
+      return buildSummary(uids, results, {
         stoppedEarly: true,
         stopReason: "code-wide-failure",
-        results
-      };
-
-      if (onFirstFailure && results.length == 1) {
-        await onFirstFailure({ code, result });
-      }
-
-      return summary;
+        stopResult: firstResult
+      });
     }
   }
 
-  const summary = {
-    total: uids.length,
-    success: results.filter(item => item.success).length,
-    failed: results.filter(item => !item.success).length,
-    stoppedEarly: false,
-    results
-  };
+  if (remainingUids.length === 0) {
+    const summary = buildSummary(uids, results);
+    if (afterComplete) await afterComplete({ code, summary });
+    return summary;
+  }
+
+  console.log(`其餘 ${remainingUids.length} 個帳號使用 ${concurrency} 並發兌換`);
+
+  let globalStopResult = null;
+
+  const concurrentResults = await runWithConcurrency(
+    remainingUids,
+    concurrency,
+    async (uid, index, workerId) => {
+      if (globalStopResult) {
+        return {
+          success: false,
+          skipped: true,
+          uid,
+          nickname: null,
+          scope: "global",
+          code: "SKIPPED_AFTER_GLOBAL_FAILURE",
+          message: `已因全局錯誤停止：${globalStopResult.message}`
+        };
+      }
+
+      if (accountDelayMax > accountDelayMin) {
+        await randomSleep(accountDelayMin, accountDelayMax);
+      } else if (accountDelayMin > 0) {
+        await sleep(accountDelayMin);
+      }
+
+      console.log(`Worker ${workerId} 開始處理第 ${index + 2}/${uids.length} 個帳號`);
+
+      const result = await redeemForUid(uid, code, redeemOptions);
+
+      if (
+        stopOnCodeWideFailure &&
+        isCodeWideFailure(result) &&
+        !globalStopResult
+      ) {
+        globalStopResult = result;
+        console.log(`偵測到全局錯誤，停止派發後續帳號：${result.message}`);
+      }
+
+      return result;
+    },
+    staggerMs
+  );
+
+  results.push(...concurrentResults);
+
+  const summary = buildSummary(uids, results, {
+    stoppedEarly: Boolean(globalStopResult),
+    stopReason: globalStopResult ? "code-wide-failure" : null,
+    stopResult: globalStopResult
+  });
 
   if (afterComplete) {
     await afterComplete({ code, summary });

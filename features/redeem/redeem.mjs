@@ -5,7 +5,7 @@ import { redeemAllUids } from "./redeem-service.mjs";
 
 async function getCode() {
   if (process.env.REDEEM_CODE) {
-    return process.env.REDEEM_CODE.trim();
+    return process.env.REDEEM_CODE.trim().toUpperCase();
   }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -31,9 +31,20 @@ if (!code) {
 
 console.log(`\n開始兌換: ${code}`);
 
-await redeemAllUids(code, uids, {
-  accountDelayMin: 3000,
-  accountDelayMax: 6000,
+const summary = await redeemAllUids(code, uids, {
+  validateFirst: true,
+  concurrency: Number(process.env.REDEEM_CONCURRENCY || 2),
+  staggerMs: Number(process.env.REDEEM_STAGGER_MS || 2000),
+  firstRedeemOptions: {
+    separator: true,
+    reportingDelayMs: 1000,
+    loginDelayMs: 1000,
+    loginOptions: {
+      maxRetries: 1,
+      preDelayMin: 0,
+      preDelayMax: 0
+    }
+  },
   redeemOptions: {
     separator: true,
     reportingDelayMs: 1000,
@@ -46,4 +57,11 @@ await redeemAllUids(code, uids, {
   }
 });
 
-console.log("\n全部完成！");
+console.log(
+  `\n兌換完成：成功 ${summary.success}，失敗 ${summary.failed}，` +
+  `跳過 ${summary.skipped}，已嘗試 ${summary.attempted}/${summary.total}`
+);
+
+if (summary.stoppedEarly) {
+  console.log(`提前停止：${summary.stopResult?.message || summary.stopReason}`);
+}
