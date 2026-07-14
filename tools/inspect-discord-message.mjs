@@ -143,9 +143,13 @@ function printSection(title, value) {
 }
 
 async function fetchDiscordMessage(messageId) {
+  const params = new URLSearchParams({
+    limit: "5",
+    around: messageId
+  });
+
   const url =
-    `https://discord.com/api/v10/channels/${CHANNEL_ID}` +
-    `/messages/${messageId}`;
+    `https://discord.com/api/v10/channels/${CHANNEL_ID}/messages?${params}`;
 
   const response = await fetch(url, {
     method: "GET",
@@ -155,18 +159,33 @@ async function fetchDiscordMessage(messageId) {
   const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status}: ${text}`
-    );
+    throw new Error(`HTTP ${response.status}: ${text}`);
   }
 
+  let messages;
+
   try {
-    return JSON.parse(text);
+    messages = JSON.parse(text);
   } catch {
     throw new Error(`Discord 返回不是 JSON: ${text}`);
   }
-}
 
+  if (!Array.isArray(messages)) {
+    throw new Error(`Discord 返回格式异常: ${text}`);
+  }
+
+  const target = messages.find(
+    message => String(message.id) === String(messageId)
+  );
+
+  if (!target) {
+    throw new Error(
+      `返回了 ${messages.length} 条消息，但没有找到目标消息 ${messageId}`
+    );
+  }
+
+  return target;
+}
 async function inspectMessage(item) {
   console.log("\n");
   console.log("=".repeat(70));
