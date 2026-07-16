@@ -157,14 +157,47 @@ console.table(
   }))
 );
 
-const selected = ranked[0];
+const nowSeconds = Math.floor(Date.now() / 1000);
+const sevenDaysSeconds = 7 * 24 * 60 * 60;
 
-console.log("\n=== Selected candidate ===");
-console.log({
-  biz_id: selected.biz_id,
-  name: selected.name,
-  score: scoreCandidate(selected)
+const selected = ranked.filter(x => {
+  const start = Number(x.start_time || 0);
+  const stop = Number(
+    activities.find(item => Number(item.biz_id) === Number(x.biz_id))?.stop_time ||
+    activities.find(item => Number(item.biz_id) === Number(x.biz_id))?.cycle_stop_time ||
+    0
+  );
+  const source = activities.find(item => Number(item.biz_id) === Number(x.biz_id));
+  const totalDays = Number(
+    source?.rule?.sign_in_total_days ??
+    source?.sign_in_total_days ??
+    0
+  );
+
+  return (
+    x.probe?.ok === true &&
+    Number(x.status) === 2 &&
+    Number(x.activity_switch) === 1 &&
+    start > 0 &&
+    stop > 0 &&
+    nowSeconds >= start &&
+    nowSeconds <= stop &&
+    stop - start + 1 === sevenDaysSeconds &&
+    totalDays === 7
+  );
 });
+
+console.log("\n=== Selected activities ===");
+console.table(
+  selected.map(x => ({
+    biz_id: x.biz_id,
+    name: x.name,
+    score: scoreCandidate(x),
+    days: x.probe?.days ?? "",
+    has: x.probe?.has_sign_in_days ?? "",
+    available: x.probe?.available_days?.join(",") ?? ""
+  }))
+);
 
   fs.mkdirSync("runtime", { recursive: true });
 
