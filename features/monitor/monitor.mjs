@@ -84,7 +84,7 @@ function saveState(state) {
 }
 
 function normalizeCode(code) {
-  return String(code || "").trim().toUpperCase();
+  return String(code || "").trim();
 }
 
 function extractGiftCode(content) {
