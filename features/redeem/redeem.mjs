@@ -13,7 +13,7 @@ async function getCode() {
   return new Promise(resolve => {
     rl.question("輸入兌換碼: ", code => {
       rl.close();
-      resolve(code.trim().toUpperCase());
+      resolve(code.trim());
     });
   });
 }
