@@ -1,11 +1,11 @@
-import { BASE, SITE_ID, PROJECT_ID, MERCHANT_ID } from "../../core/config.mjs";
+import { NEW_BASE, SITE_ID, PROJECT_ID, MERCHANT_ID } from "../../core/config.mjs";
 import { gameHeaders } from "../../core/api.mjs";
 import { login } from "../../core/auth.mjs";
 import { sleep, randomSleep } from "../../core/sleep.mjs";
 import { maskUid, runWithConcurrency } from "../../core/utils.mjs";
 
-async function reportLoginShow() {
-  await fetch(`${BASE}/api/v2/store/point/reporting`, {
+async function reportLoginShow(baseUrl = NEW_BASE) {
+  await fetch(`${baseUrl}/api/v2/store/point/reporting`, {
     method: "POST",
     headers: gameHeaders,
     body: JSON.stringify({
@@ -53,8 +53,8 @@ export function classifyRedeemFailure(message) {
   return { scope: "account", code: "ACCOUNT_OR_UNKNOWN_FAILURE" };
 }
 
-async function redeemCode(authedHeaders, code) {
-  const response = await fetch(`${BASE}/api/v2/store/redemption/redeem`, {
+async function redeemCode(baseUrl, authedHeaders, code) {
+  const response = await fetch(`${baseUrl}/api/v2/store/redemption/redeem`, {
     method: "POST",
     headers: authedHeaders,
     body: JSON.stringify({
@@ -117,19 +117,23 @@ export async function redeemForUid(uid, code, options = {}) {
   }
 
   try {
-    await reportLoginShow();
-
-    if (reportingDelayMs > 0) {
-      await sleep(reportingDelayMs);
-    }
-
     const loginInfo = await login(uid, {
       device: "mobile",
       logLifecycle: false,
       ...loginOptions
     });
 
-    console.log(`${indent}登錄成功 ✓ (${loginInfo.nickname})`);
+    console.log(`${indent}登錄成功 ✓ (${loginInfo.nickname}, ${loginInfo.system} mall)`);
+
+    try {
+      await reportLoginShow(loginInfo.baseUrl);
+    } catch {
+      // reporting 失敗不影響兌換
+    }
+
+    if (reportingDelayMs > 0) {
+      await sleep(reportingDelayMs);
+    }
 
     if (loginDelayMax > loginDelayMin) {
       await randomSleep(loginDelayMin, loginDelayMax);
@@ -137,7 +141,7 @@ export async function redeemForUid(uid, code, options = {}) {
       await sleep(loginDelayMs);
     }
 
-    const result = await redeemCode(loginInfo.authedHeaders, code);
+    const result = await redeemCode(loginInfo.baseUrl, loginInfo.authedHeaders, code);
 
     if (result.success) {
       console.log(`${indent}兌換成功 ✓${separator ? ` (${code})` : ""}`);

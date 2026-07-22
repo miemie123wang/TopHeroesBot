@@ -5,7 +5,7 @@ import { redeemAllUids } from "./redeem-service.mjs";
 
 async function getCode() {
   if (process.env.REDEEM_CODE) {
-    return process.env.REDEEM_CODE.trim().toUpperCase();
+    return process.env.REDEEM_CODE.trim();
   }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

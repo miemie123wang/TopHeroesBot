@@ -1,12 +1,20 @@
-import { BASE, SITE_ID, PROJECT_ID } from "./config.mjs";
+import { NEW_BASE, OLD_BASE, SITE_ID, PROJECT_ID } from "./config.mjs";
 import { gameHeaders } from "./api.mjs";
 import { sleep, randomSleep } from "./sleep.mjs";
 import { logInfo } from "./logger.mjs";
 import { maskUid, getNicknameFromLoginData } from "./utils.mjs";
 
-export async function preCheckPlayer(uid) {
+function isOldSystemAccount(message) {
+  return String(message || "").toLowerCase().includes("user not in new system");
+}
+
+function isNewSystemAccount(message) {
+  return String(message || "").toLowerCase().includes("redirect to new mall");
+}
+
+export async function preCheckPlayer(uid, baseUrl = NEW_BASE) {
   const url =
-    `${BASE}/api/v2/store/player-info` +
+    `${baseUrl}/api/v2/store/player-info` +
     `?project_id=${PROJECT_ID}` +
     `&player_id=${encodeURIComponent(uid)}` +
     `&site_id=${SITE_ID}`;
@@ -16,6 +24,58 @@ export async function preCheckPlayer(uid) {
   } catch {
     // player-info 失敗不影響 login
   }
+}
+
+async function loginAtBase(uid, baseUrl, device) {
+  await preCheckPlayer(uid, baseUrl);
+
+  const response = await fetch(`${baseUrl}/api/v2/store/login/player`, {
+    method: "POST",
+    headers: gameHeaders,
+    body: JSON.stringify({
+      site_id: SITE_ID,
+      player_id: uid,
+      server_id: "",
+      device
+    })
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${text}`);
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`返回不是 JSON：${text}`);
+  }
+
+  if (data.code !== 1) {
+    throw new Error(data.message || JSON.stringify(data));
+  }
+
+  const nickname = getNicknameFromLoginData(data) === "Unknown"
+    ? "(unknown)"
+    : getNicknameFromLoginData(data);
+  const token = response.headers.get("authorization");
+
+  if (!token) {
+    throw new Error(`沒有拿到 token (${nickname})`);
+  }
+
+  return {
+    nickname,
+    token,
+    baseUrl,
+    system: baseUrl === NEW_BASE ? "new" : "old",
+    authedHeaders: {
+      ...gameHeaders,
+      authorization: token
+    }
+  };
 }
 
 export async function login(uid, options = {}) {
@@ -30,63 +90,38 @@ export async function login(uid, options = {}) {
   } = options;
 
   let lastError;
+  let preferredBase = NEW_BASE;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      await preCheckPlayer(uid);
       await randomSleep(preDelayMin, preDelayMax);
 
       if (logLifecycle) {
         logInfo(`[LOGIN START] ${maskUid(uid)} ${new Date().toISOString()}`);
       }
 
-      const response = await fetch(`${BASE}/api/v2/store/login/player`, {
-        method: "POST",
-        headers: gameHeaders,
-        body: JSON.stringify({
-          site_id: SITE_ID,
-          player_id: uid,
-          server_id: "",
-          device
-        })
-      });
-
-      const text = await response.text();
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${text}`);
-      }
-
-      let data;
+      let result;
       try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`返回不是 JSON：${text}`);
-      }
+        result = await loginAtBase(uid, preferredBase, device);
+      } catch (error) {
+        const message = error.message || String(error);
 
-      if (data.code !== 1) {
-        throw new Error(data.message || JSON.stringify(data));
-      }
-
-      const nickname = getNicknameFromLoginData(data) === "Unknown" ? "(unknown)" : getNicknameFromLoginData(data);
-      const token = response.headers.get("authorization");
-
-      if (!token) {
-        throw new Error(`沒有拿到 token (${nickname})`);
+        if (preferredBase === NEW_BASE && isOldSystemAccount(message)) {
+          console.warn(`${maskUid(uid)} 尚未迁移到新商城，立即改用舊商城登入`);
+          result = await loginAtBase(uid, OLD_BASE, device);
+        } else if (preferredBase === OLD_BASE && isNewSystemAccount(message)) {
+          console.warn(`${maskUid(uid)} 已迁移到新商城，立即改用新商城登入`);
+          result = await loginAtBase(uid, NEW_BASE, device);
+        } else {
+          throw error;
+        }
       }
 
       if (logLifecycle) {
-        logInfo(`[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()}`);
+        logInfo(`[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()} (${result.system} mall)`);
       }
 
-      return {
-        nickname,
-        token,
-        authedHeaders: {
-          ...gameHeaders,
-          authorization: token
-        }
-      };
+      return result;
     } catch (err) {
       lastError = err;
 

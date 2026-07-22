@@ -1,5 +1,7 @@
-export const BASE = "https://topheroes.pay-store.rivergame.net";
+export const OLD_MALL_BASE_URL = "https://topheroes.store.kopglobal.com";
+export const NEW_MALL_BASE_URL = "https://topheroes.pay-store.rivergame.net";
 
+export const BASE = NEW_MALL_BASE_URL;
 export const SITE_ID = 1028526;
 export const PROJECT_ID = 1028637;
 export const MERCHANT_ID = 1002558;
