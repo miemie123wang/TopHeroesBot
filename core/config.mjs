@@ -1,4 +1,4 @@
-export const BASE = "https://topheroes.store.kopglobal.com";
+export const BASE = "https://topheroes.pay-store.rivergame.net";
 
 export const SITE_ID = 1028526;
 export const PROJECT_ID = 1028637;
