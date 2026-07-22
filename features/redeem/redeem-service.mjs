@@ -107,13 +107,20 @@ export async function redeemForUid(uid, code, options = {}) {
     loginDelayMin = 0,
     loginDelayMax = 0,
     loginOptions = {},
-    throwOnError = false
+    throwOnError = false,
+    workerLabel = null,
+    itemNumber = null,
+    totalItems = null
   } = options;
+
+  const logPrefix =
+    `[${workerLabel ?? "Main"}][${maskUid(uid)}]` +
+    (itemNumber && totalItems ? `[${itemNumber}/${totalItems}]` : "");
 
   if (separator) {
     console.log(`\n========== UID: ${maskUid(uid)} ==========`);
   } else {
-    console.log(`${indent}UID: ${maskUid(uid)}`);
+    console.log(`${indent}${logPrefix} 開始處理`);
   }
 
   try {
@@ -123,7 +130,7 @@ export async function redeemForUid(uid, code, options = {}) {
       ...loginOptions
     });
 
-    console.log(`${indent}登錄成功 ✓ (${loginInfo.nickname}, ${loginInfo.system} mall)`);
+    console.log(`${indent}${logPrefix} 登錄成功 ✓ (${loginInfo.nickname}, ${loginInfo.system} mall)`);
 
     try {
       await reportLoginShow(loginInfo.baseUrl);
@@ -144,9 +151,9 @@ export async function redeemForUid(uid, code, options = {}) {
     const result = await redeemCode(loginInfo.baseUrl, loginInfo.authedHeaders, code);
 
     if (result.success) {
-      console.log(`${indent}兌換成功 ✓${separator ? ` (${code})` : ""}`);
+      console.log(`${indent}${logPrefix} 兌換成功 ✓${separator ? ` (${code})` : ""}`);
     } else {
-      console.error(`${indent}兌換失敗 [${result.scope}/${result.code}]: ${result.message}`);
+      console.error(`${indent}${logPrefix} 兌換失敗 [${result.scope}/${result.code}]: ${result.message}`);
     }
 
     return {
@@ -157,7 +164,7 @@ export async function redeemForUid(uid, code, options = {}) {
   } catch (err) {
     if (throwOnError) throw err;
 
-    console.error(`${indent}登錄/兌換流程失敗: ${err.message}`);
+    console.error(`${indent}${logPrefix} 登錄/兌換流程失敗: ${err.message}`);
 
     return {
       success: false,
@@ -220,7 +227,12 @@ export async function redeemAllUids(code, uids, options = {}) {
   let remainingUids = uids;
 
   if (validateFirst) {
-    const firstResult = await redeemForUid(uids[0], code, firstRedeemOptions);
+    const firstResult = await redeemForUid(uids[0], code, {
+      ...firstRedeemOptions,
+      workerLabel: "首個帳號",
+      itemNumber: 1,
+      totalItems: uids.length
+    });
     results.push(firstResult);
     remainingUids = uids.slice(1);
 
@@ -276,7 +288,12 @@ export async function redeemAllUids(code, uids, options = {}) {
 
       console.log(`Worker ${workerId} 開始處理第 ${index + 2}/${uids.length} 個帳號`);
 
-      const result = await redeemForUid(uid, code, redeemOptions);
+      const result = await redeemForUid(uid, code, {
+        ...redeemOptions,
+        workerLabel: `Worker ${workerId}`,
+        itemNumber: index + 2,
+        totalItems: uids.length
+      });
 
       if (
         stopOnCodeWideFailure &&
