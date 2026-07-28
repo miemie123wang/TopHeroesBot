@@ -5,10 +5,10 @@
   },
   "processedCodes": {
     "GB60A83BC3A0": {
-      "processedAt": "2026-07-28T02:12:09.023Z",
+      "processedAt": "2026-07-28T02:15:29.557Z",
       "status": "completed",
-      "success": 26,
-      "failed": 1
+      "success": 0,
+      "failed": 27
     },
     "GB96712876C4": {
       "processedAt": "2026-07-27T02:27:52.639Z",
