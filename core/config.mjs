@@ -13,6 +13,15 @@ export const PROJECT_ID = 1028637;
 export const MERCHANT_ID = 1002558;
 export const DEBUG_UID = "1730046798208";
 
+// 临时签到活动兜底。
+// 正式流程仍会优先自动读取活动列表；只有自动发现失败时才使用这里。
+// 也可以在 GitHub Actions / 本地环境中用 SIGNIN_ACTIVITY_ID 临时覆盖。
+export const SIGNIN_FALLBACK_ACTIVITY_ID = Number(
+  process.env.SIGNIN_ACTIVITY_ID || 3431
+);
+export const SIGNIN_FALLBACK_ACTIVITY_NAME =
+  process.env.SIGNIN_ACTIVITY_NAME || "史莱姆签到0727-2-正式";
+
 export const env = {
   APPS_SCRIPT_URL: process.env.APPS_SCRIPT_URL,
   APPS_SCRIPT_KEY: process.env.APPS_SCRIPT_KEY,

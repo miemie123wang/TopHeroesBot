@@ -1,10 +1,16 @@
-import { BASE, SITE_ID, PROJECT_ID } from "../../core/config.mjs";
+import {
+  BASE,
+  SITE_ID,
+  PROJECT_ID,
+  SIGNIN_FALLBACK_ACTIVITY_ID,
+  SIGNIN_FALLBACK_ACTIVITY_NAME
+} from "../../core/config.mjs";
 import { fetchJson } from "../../core/api.mjs";
 import { login } from "../../core/auth.mjs";
 import { sendDiscord } from "../../core/discord.mjs";
 import { fetchApprovedUids } from "../../core/sheet.mjs";
 import { randomSleep } from "../../core/sleep.mjs";
-import { logInfo, logOk, logError } from "../../core/logger.mjs";
+import { logInfo, logOk, logWarn, logError } from "../../core/logger.mjs";
 import {
   maskUid,
   getTodayDateString,
@@ -38,60 +44,82 @@ function getActivityStats(activity) {
 }
 
 async function getCurrentSignActivities(authedHeaders) {
-  const data = await fetchJson(
-    `${BASE}/api/v2/store/sale/biz/list?project_id=${PROJECT_ID}&status=2`,
-    { headers: authedHeaders }
-  );
+  let data;
 
-  const activities = data?.data?.list;
-
-  if (!Array.isArray(activities)) {
-    throw new Error(`沒有取得活動列表: ${JSON.stringify(data)}`);
+  try {
+    data = await fetchJson(
+      `${BASE}/api/v2/store/sale/biz/list?project_id=${PROJECT_ID}&status=2`,
+      { headers: authedHeaders }
+    );
+  } catch (error) {
+    logWarn(`自动活动列表请求失败，将尝试临时兜底活动。原因: ${error.message}`);
   }
 
+  const activities = data?.data?.list;
   const now = Math.floor(Date.now() / 1000);
   const sevenDaysSeconds = 7 * 24 * 60 * 60;
 
-  const signActivities = activities
-    .filter(item => Number(item.activity_type) === 4)
-    .filter(item => Number(item.status) === 2)
-    .filter(item => Number(item.activity_switch) === 1)
-    .filter(item => {
-      const start = Number(item.start_time || 0);
-      const stop = Number(item.stop_time || item.cycle_stop_time || 0);
-      return start && stop && now >= start && now <= stop;
-    })
-    .filter(item => {
-      const start = Number(item.start_time || 0);
-      const stop = Number(item.stop_time || item.cycle_stop_time || 0);
-      if (!start || !stop) return false;
+  const signActivities = Array.isArray(activities)
+    ? activities
+        .filter(item => Number(item.activity_type) === 4)
+        .filter(item => Number(item.status) === 2)
+        .filter(item => Number(item.activity_switch) === 1)
+        .filter(item => {
+          const start = Number(item.start_time || 0);
+          const stop = Number(item.stop_time || item.cycle_stop_time || 0);
+          return start && stop && now >= start && now <= stop;
+        })
+        .filter(item => {
+          const start = Number(item.start_time || 0);
+          const stop = Number(item.stop_time || item.cycle_stop_time || 0);
+          if (!start || !stop) return false;
 
-      const durationSeconds = stop - start + 1;
-      const totalDays = Number(
-        item.rule?.sign_in_total_days ??
-        item.sign_in_total_days ??
-        0
-      );
+          const durationSeconds = stop - start + 1;
+          const totalDays = Number(
+            item.rule?.sign_in_total_days ??
+            item.sign_in_total_days ??
+            0
+          );
 
-      return durationSeconds === sevenDaysSeconds && totalDays === 7;
-    })
-    .sort((a, b) => Number(a.start_time || 0) - Number(b.start_time || 0))
-    .map(item => ({
-      id: item.biz_id,
-      name: item.name,
-      startTime: Number(item.start_time || 0)
-    }));
+          return durationSeconds === sevenDaysSeconds && totalDays === 7;
+        })
+        .sort((a, b) => Number(a.start_time || 0) - Number(b.start_time || 0))
+        .map(item => ({
+          id: Number(item.biz_id),
+          name: item.name,
+          startTime: Number(item.start_time || 0),
+          source: "automatic"
+        }))
+    : [];
 
-  if (signActivities.length === 0) {
-    throw new Error("沒有找到進行中的 7 天簽到活動");
+  if (signActivities.length > 0) {
+    logInfo(`自动找到 ${signActivities.length} 个进行中的 7 天签到活动`);
+    for (const activity of signActivities) {
+      logInfo(`候选活动：${activity.name} / biz_id=${activity.id} / source=automatic`);
+    }
+
+    return signActivities;
   }
 
-  logInfo(`找到 ${signActivities.length} 個進行中的 7 天簽到活動`);
-  for (const activity of signActivities) {
-    logInfo(`候選活動：${activity.name} / biz_id=${activity.id}`);
+  if (!Number.isInteger(SIGNIN_FALLBACK_ACTIVITY_ID) || SIGNIN_FALLBACK_ACTIVITY_ID <= 0) {
+    const raw = data ? JSON.stringify(data) : "活动列表请求失败";
+    throw new Error(`自动活动发现失败，而且没有有效的临时活动 ID。活动列表: ${raw}`);
   }
 
-  return signActivities;
+  logWarn(
+    `自动活动发现当前不可用，临时使用兜底活动：` +
+    `${SIGNIN_FALLBACK_ACTIVITY_NAME} / biz_id=${SIGNIN_FALLBACK_ACTIVITY_ID}`
+  );
+  logWarn("兜底活动会由第一个账号实际验证；验证失败时仍会立即停止后续账号。");
+
+  return [
+    {
+      id: SIGNIN_FALLBACK_ACTIVITY_ID,
+      name: SIGNIN_FALLBACK_ACTIVITY_NAME,
+      startTime: 0,
+      source: "fallback"
+    }
+  ];
 }
 
 async function getSignInData(authedHeaders, activityId) {
@@ -100,11 +128,27 @@ async function getSignInData(authedHeaders, activityId) {
     { headers: authedHeaders }
   );
 
-  if (!data?.data?.sign_in_list) {
+  const signInData = data?.data;
+  const signInList = signInData?.sign_in_list;
+
+  if (!Array.isArray(signInList)) {
     throw new Error(`沒有簽到資料: ${JSON.stringify(data)}`);
   }
 
-  return data.data;
+  if (Number(signInData.activity_id) !== Number(activityId)) {
+    throw new Error(
+      `簽到活動 ID 驗證失敗: requested=${activityId}, returned=${signInData.activity_id}. ` +
+      `${JSON.stringify(data).slice(0, 500)}`
+    );
+  }
+
+  if (signInList.length !== 7) {
+    throw new Error(
+      `簽到活動天數不是 7 天: activity_id=${activityId}, days=${signInList.length}`
+    );
+  }
+
+  return signInData;
 }
 
 function getMakeupItems(signInList) {
@@ -327,7 +371,7 @@ async function main() {
 
         recordActivitySuccess(result);
         activities.push(activity);
-        logOk(`活動驗證成功：${activity.name} / ${activity.id}`);
+        logOk(`活動驗證成功：${activity.name} / ${activity.id} / source=${activity.source || "unknown"}`);
       } catch (error) {
         stats.rejectedActivities.push({ activity, error: error.message });
         logError(
@@ -358,7 +402,7 @@ UID: ${maskUid(uids[0])}
 
   logInfo(`本次確認有效的簽到活動: ${activities.length}`);
   for (const activity of activities) {
-    logInfo(`✓ ${activity.name} / biz_id=${activity.id}`);
+    logInfo(`✓ ${activity.name} / biz_id=${activity.id} / source=${activity.source || "unknown"}`);
   }
 
   await randomSleep(5000, 10000);
