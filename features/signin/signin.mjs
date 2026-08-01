@@ -1,21 +1,31 @@
 import {
-  BASE,
+  OLD_BASE,
+  NEW_BASE,
   SITE_ID,
-  PROJECT_ID,
-  SIGNIN_FALLBACK_ACTIVITY_ID,
-  SIGNIN_FALLBACK_ACTIVITY_NAME
+  PROJECT_ID
 } from "../../core/config.mjs";
 import { fetchJson } from "../../core/api.mjs";
 import { login } from "../../core/auth.mjs";
 import { sendDiscord } from "../../core/discord.mjs";
 import { fetchApprovedUids } from "../../core/sheet.mjs";
-import { randomSleep } from "../../core/sleep.mjs";
+import { randomSleep, sleep } from "../../core/sleep.mjs";
 import { logInfo, logOk, logWarn, logError } from "../../core/logger.mjs";
 import {
   maskUid,
   getTodayDateString,
   runWithConcurrency
 } from "../../core/utils.mjs";
+
+const STORE_BASE = "https://store.topheroes.com";
+
+const SIGNIN_BASES = [
+  { name: "store.topheroes.com", url: STORE_BASE },
+  { name: "topheroes.store.kopglobal.com", url: OLD_BASE },
+  { name: "topheroes.pay-store.rivergame.net", url: NEW_BASE }
+].filter(
+  (item, index, list) =>
+    item.url && list.findIndex(other => other.url === item.url) === index
+);
 
 const stats = {
   total: 0,
@@ -43,112 +53,355 @@ function getActivityStats(activity) {
   return stats.byActivity.get(activity.id);
 }
 
-async function getCurrentSignActivities(authedHeaders) {
-  let data;
+function getManualActivityIds() {
+  const raw = String(process.env.SIGNIN_ACTIVITY_ID || "").trim();
 
-  try {
-    data = await fetchJson(
-      `${BASE}/api/v2/store/sale/biz/list?project_id=${PROJECT_ID}&status=2`,
-      { headers: authedHeaders }
+  if (!raw) {
+    return [];
+  }
+
+  const ids = raw
+    .split(/[\s,;]+/)
+    .map(value => Number(value.trim()))
+    .filter(value => Number.isInteger(value) && value > 0);
+
+  const uniqueIds = [...new Set(ids)];
+
+  if (uniqueIds.length === 0) {
+    throw new Error(
+      `SIGNIN_ACTIVITY_ID 无效: ${raw}. 请填写正整数活动 ID。`
     );
-  } catch (error) {
-    logWarn(`自动活动列表请求失败，将尝试临时兜底活动。原因: ${error.message}`);
   }
 
-  const activities = data?.data?.list;
-  const now = Math.floor(Date.now() / 1000);
-  const sevenDaysSeconds = 7 * 24 * 60 * 60;
-
-  const signActivities = Array.isArray(activities)
-    ? activities
-        .filter(item => Number(item.activity_type) === 4)
-        .filter(item => Number(item.status) === 2)
-        .filter(item => Number(item.activity_switch) === 1)
-        .filter(item => {
-          const start = Number(item.start_time || 0);
-          const stop = Number(item.stop_time || item.cycle_stop_time || 0);
-          return start && stop && now >= start && now <= stop;
-        })
-        .filter(item => {
-          const start = Number(item.start_time || 0);
-          const stop = Number(item.stop_time || item.cycle_stop_time || 0);
-          if (!start || !stop) return false;
-
-          const durationSeconds = stop - start + 1;
-          const totalDays = Number(
-            item.rule?.sign_in_total_days ??
-            item.sign_in_total_days ??
-            0
-          );
-
-          return durationSeconds === sevenDaysSeconds && totalDays === 7;
-        })
-        .sort((a, b) => Number(a.start_time || 0) - Number(b.start_time || 0))
-        .map(item => ({
-          id: Number(item.biz_id),
-          name: item.name,
-          startTime: Number(item.start_time || 0),
-          source: "automatic"
-        }))
-    : [];
-
-  if (signActivities.length > 0) {
-    logInfo(`自动找到 ${signActivities.length} 个进行中的 7 天签到活动`);
-    for (const activity of signActivities) {
-      logInfo(`候选活动：${activity.name} / biz_id=${activity.id} / source=automatic`);
-    }
-
-    return signActivities;
-  }
-
-  if (!Number.isInteger(SIGNIN_FALLBACK_ACTIVITY_ID) || SIGNIN_FALLBACK_ACTIVITY_ID <= 0) {
-    const raw = data ? JSON.stringify(data) : "活动列表请求失败";
-    throw new Error(`自动活动发现失败，而且没有有效的临时活动 ID。活动列表: ${raw}`);
-  }
-
-  logWarn(
-    `自动活动发现当前不可用，临时使用兜底活动：` +
-    `${SIGNIN_FALLBACK_ACTIVITY_NAME} / biz_id=${SIGNIN_FALLBACK_ACTIVITY_ID}`
-  );
-  logWarn("兜底活动会由第一个账号实际验证；验证失败时仍会立即停止后续账号。");
-
-  return [
-    {
-      id: SIGNIN_FALLBACK_ACTIVITY_ID,
-      name: SIGNIN_FALLBACK_ACTIVITY_NAME,
-      startTime: 0,
-      source: "fallback"
-    }
-  ];
+  return uniqueIds;
 }
 
-async function getSignInData(authedHeaders, activityId) {
+function extractBuilderCandidateIds(payload) {
+  const text = JSON.stringify(payload);
+  const pattern =
+    /(?:activity_id|activityId|biz_id|bizId)[^0-9]{0,40}(\d{4,})/g;
+  const ids = [];
+  const seen = new Set();
+
+  for (const match of text.matchAll(pattern)) {
+    const id = Number(match[1]);
+
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) {
+      continue;
+    }
+
+    seen.add(id);
+    ids.push(id);
+  }
+
+  return ids;
+}
+
+function extractActivityList(response) {
+  const candidates = [
+    response?.data?.list,
+    response?.data?.data,
+    response?.list
+  ];
+
+  return candidates.find(Array.isArray) || [];
+}
+
+function mergeCandidates(...groups) {
+  const map = new Map();
+
+  for (const group of groups) {
+    for (const candidate of group || []) {
+      const id = Number(candidate?.id);
+
+      if (!Number.isInteger(id) || id <= 0) {
+        continue;
+      }
+
+      const previous = map.get(id);
+
+      map.set(id, {
+        id,
+        name:
+          candidate.name ||
+          previous?.name ||
+          `签到活动 ${id}`,
+        source: [previous?.source, candidate.source]
+          .filter(Boolean)
+          .filter((value, index, list) => list.indexOf(value) === index)
+          .join("+") || "unknown"
+      });
+    }
+  }
+
+  return [...map.values()];
+}
+
+async function discoverFromBuilderInfo(authedHeaders) {
+  const url =
+    `${STORE_BASE}/api/v2/store/site/builder/info` +
+    `?site_builder_id=${SITE_ID}`;
+
+  logInfo(`读取站点活动配置: ${url}`);
+
+  const response = await fetchJson(
+    url,
+    { headers: authedHeaders },
+    1
+  );
+
+  const ids = extractBuilderCandidateIds(response);
+
+  logInfo(`builder/info 提取到 ${ids.length} 个候选活动 ID`);
+
+  return ids.map(id => ({
+    id,
+    name: `签到活动 ${id}`,
+    source: "builder-info"
+  }));
+}
+
+async function discoverFromKopActivityList(authedHeaders) {
+  const url =
+    `${OLD_BASE}/api/v2/store/sale/biz/list` +
+    `?project_id=${PROJECT_ID}` +
+    `&activity_type=4`;
+
+  try {
+    const response = await fetchJson(
+      url,
+      { headers: authedHeaders },
+      1
+    );
+
+    const activities = extractActivityList(response)
+      .filter(item => Number(item?.activity_type) === 4)
+      .map(item => ({
+        id: Number(item?.biz_id ?? item?.activity_id ?? item?.id),
+        name: item?.name || item?.activity_name || "",
+        source: "kop-biz-list"
+      }))
+      .filter(item => Number.isInteger(item.id) && item.id > 0);
+
+    logInfo(`KOP 活动列表补充 ${activities.length} 个签到候选`);
+
+    return activities;
+  } catch (error) {
+    logWarn(`KOP 活动列表读取失败，继续使用 builder/info。原因: ${error.message}`);
+    return [];
+  }
+}
+
+function validateSignInResponse(response, requestedId) {
+  const signInData = response?.data;
+  const signInList = signInData?.sign_in_list;
+  const returnedId = Number(signInData?.activity_id || 0);
+
+  if (Number(response?.code) !== 1) {
+    return {
+      ok: false,
+      reason: response?.message || `code=${response?.code}`
+    };
+  }
+
+  if (returnedId !== Number(requestedId)) {
+    return {
+      ok: false,
+      reason: `返回活动 ID 不匹配: requested=${requestedId}, returned=${returnedId}`
+    };
+  }
+
+  if (!Array.isArray(signInList) || signInList.length === 0) {
+    return {
+      ok: false,
+      reason: "没有 sign_in_list"
+    };
+  }
+
+  const allExpired = signInList.every(item => item?.is_expired === true);
+
+  if (allExpired) {
+    return {
+      ok: false,
+      reason: "签到活动所有天数均已过期"
+    };
+  }
+
+  return {
+    ok: true,
+    signInData,
+    days: signInList.length
+  };
+}
+
+async function probeCandidateAtBase(authedHeaders, candidate, base) {
+  const url =
+    `${base.url}/api/v2/store/sale/biz/sign-in-list` +
+    `?page_size=365` +
+    `&site_id=${SITE_ID}` +
+    `&page_no=1` +
+    `&activity_id=${candidate.id}`;
+
+  try {
+    const response = await fetchJson(
+      url,
+      { headers: authedHeaders },
+      0
+    );
+
+    const validation = validateSignInResponse(response, candidate.id);
+
+    return {
+      ...validation,
+      baseName: base.name,
+      baseUrl: base.url,
+      url,
+      response
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      baseName: base.name,
+      baseUrl: base.url,
+      url,
+      reason: error.message
+    };
+  }
+}
+
+async function verifyCandidate(authedHeaders, candidate) {
+  const attempts = [];
+
+  for (const base of SIGNIN_BASES) {
+    const result = await probeCandidateAtBase(
+      authedHeaders,
+      candidate,
+      base
+    );
+
+    attempts.push(result);
+
+    if (result.ok) {
+      return {
+        ...candidate,
+        name:
+          candidate.name && !candidate.name.startsWith("签到活动 ")
+            ? candidate.name
+            : `签到活动 ${candidate.id}`,
+        baseName: result.baseName,
+        baseUrl: result.baseUrl,
+        days: result.days,
+        initialSignInData: result.signInData,
+        attempts
+      };
+    }
+
+    await sleep(150);
+  }
+
+  const reason = attempts
+    .map(item => `${item.baseName}: ${item.reason || "验证失败"}`)
+    .join(" | ");
+
+  return {
+    ...candidate,
+    verified: false,
+    reason,
+    attempts
+  };
+}
+
+async function getCurrentSignActivities(authedHeaders) {
+  const manualIds = getManualActivityIds();
+  let candidates;
+
+  if (manualIds.length > 0) {
+    logWarn(
+      `使用手动活动 ID，跳过自动发现: ${manualIds.join(", ")}`
+    );
+
+    candidates = manualIds.map(id => ({
+      id,
+      name:
+        manualIds.length === 1 && process.env.SIGNIN_ACTIVITY_NAME
+          ? process.env.SIGNIN_ACTIVITY_NAME
+          : `手动签到活动 ${id}`,
+      source: "manual"
+    }));
+  } else {
+    const builderCandidates = await discoverFromBuilderInfo(authedHeaders);
+    const kopCandidates = await discoverFromKopActivityList(authedHeaders);
+
+    candidates = mergeCandidates(builderCandidates, kopCandidates);
+
+    logInfo(`合并后共有 ${candidates.length} 个候选活动`);
+  }
+
+  if (candidates.length === 0) {
+    throw new Error("没有发现任何签到候选活动");
+  }
+
+  const validActivities = [];
+
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+
+    logInfo(
+      `验证候选 ${index + 1}/${candidates.length}: ` +
+      `${candidate.id} / source=${candidate.source}`
+    );
+
+    const result = await verifyCandidate(authedHeaders, candidate);
+
+    if (result.baseUrl) {
+      validActivities.push(result);
+      logOk(
+        `确认签到活动: ${result.id} / ${result.days} 天 / ` +
+        `${result.baseName}`
+      );
+    } else {
+      stats.rejectedActivities.push({
+        activity: candidate,
+        error: result.reason
+      });
+      logInfo(`排除非签到活动 ${candidate.id}: ${result.reason}`);
+    }
+
+    await sleep(200);
+  }
+
+  if (validActivities.length === 0) {
+    const mode = manualIds.length > 0 ? "手动活动" : "自动发现";
+    throw new Error(`${mode}没有验证到可用的签到活动`);
+  }
+
+  logOk(
+    `最终确认 ${validActivities.length} 个签到活动: ` +
+    validActivities.map(item => item.id).join(", ")
+  );
+
+  return validActivities;
+}
+
+async function getSignInData(authedHeaders, activity) {
   const data = await fetchJson(
-    `${BASE}/api/v2/store/sale/biz/sign-in-list?activity_id=${activityId}&page_size=365&site_id=${SITE_ID}&page_no=1`,
+    `${activity.baseUrl}/api/v2/store/sale/biz/sign-in-list` +
+    `?activity_id=${activity.id}` +
+    `&page_size=365` +
+    `&site_id=${SITE_ID}` +
+    `&page_no=1`,
     { headers: authedHeaders }
   );
 
-  const signInData = data?.data;
-  const signInList = signInData?.sign_in_list;
+  const validation = validateSignInResponse(data, activity.id);
 
-  if (!Array.isArray(signInList)) {
-    throw new Error(`沒有簽到資料: ${JSON.stringify(data)}`);
-  }
-
-  if (Number(signInData.activity_id) !== Number(activityId)) {
+  if (!validation.ok) {
     throw new Error(
-      `簽到活動 ID 驗證失敗: requested=${activityId}, returned=${signInData.activity_id}. ` +
-      `${JSON.stringify(data).slice(0, 500)}`
+      `没有可用签到资料: activity_id=${activity.id}; ${validation.reason}`
     );
   }
 
-  if (signInList.length !== 7) {
-    throw new Error(
-      `簽到活動天數不是 7 天: activity_id=${activityId}, days=${signInList.length}`
-    );
-  }
-
-  return signInData;
+  return validation.signInData;
 }
 
 function getMakeupItems(signInList) {
@@ -161,39 +414,45 @@ function getTodayItem(signInList) {
   );
 }
 
-async function receiveMakeupSignIn(authedHeaders, activityId, item) {
-  const data = await fetchJson(`${BASE}/api/v2/store/sale/biz/sign-in/gift/receive`, {
-    method: "POST",
-    headers: authedHeaders,
-    body: JSON.stringify({
-      activity_id: activityId,
-      sign_in_type: 2,
-      site_id: SITE_ID,
-      day_no: item.day_no,
-      appending_date: getTodayDateString()
-    })
-  });
+async function receiveMakeupSignIn(authedHeaders, activity, item) {
+  const data = await fetchJson(
+    `${activity.baseUrl}/api/v2/store/sale/biz/sign-in/gift/receive`,
+    {
+      method: "POST",
+      headers: authedHeaders,
+      body: JSON.stringify({
+        activity_id: activity.id,
+        sign_in_type: 2,
+        site_id: SITE_ID,
+        day_no: item.day_no,
+        appending_date: getTodayDateString()
+      })
+    }
+  );
 
-  if (data.code !== 1) {
-    throw new Error(`補簽失敗: ${JSON.stringify(data)}`);
+  if (Number(data?.code) !== 1) {
+    throw new Error(`补签失败: ${JSON.stringify(data)}`);
   }
 
   return data;
 }
 
-async function receiveTodaySignIn(authedHeaders, activityId) {
-  const data = await fetchJson(`${BASE}/api/v2/store/sale/biz/sign-in/gift/receive`, {
-    method: "POST",
-    headers: authedHeaders,
-    body: JSON.stringify({
-      activity_id: activityId,
-      sign_in_type: 1,
-      site_id: SITE_ID
-    })
-  });
+async function receiveTodaySignIn(authedHeaders, activity) {
+  const data = await fetchJson(
+    `${activity.baseUrl}/api/v2/store/sale/biz/sign-in/gift/receive`,
+    {
+      method: "POST",
+      headers: authedHeaders,
+      body: JSON.stringify({
+        activity_id: activity.id,
+        sign_in_type: 1,
+        site_id: SITE_ID
+      })
+    }
+  );
 
-  if (data.code !== 1) {
-    throw new Error(`今天簽到失敗: ${JSON.stringify(data)}`);
+  if (Number(data?.code) !== 1) {
+    throw new Error(`今天签到失败: ${JSON.stringify(data)}`);
   }
 
   return data;
@@ -201,14 +460,24 @@ async function receiveTodaySignIn(authedHeaders, activityId) {
 
 function logSignStatus(signInData) {
   const total = signInData.sign_in_list?.length ?? "?";
-  logInfo(`已簽到天數: ${signInData.has_sign_in_days}/${total}`);
-  logInfo(`剩餘補簽次數: ${signInData.remain_appending_days}`);
+  logInfo(`已签到天数: ${signInData.has_sign_in_days}/${total}`);
+  logInfo(`剩余补签次数: ${signInData.remain_appending_days}`);
 }
 
-async function processSingleActivity(nickname, authedHeaders, activity) {
-  logInfo(`開始處理活動：${activity.name} / ${activity.id} (${nickname})`);
+async function processSingleActivity(
+  nickname,
+  authedHeaders,
+  activity,
+  initialSignInData = null
+) {
+  logInfo(
+    `开始处理活动: ${activity.name} / ${activity.id} / ` +
+    `${activity.baseName} (${nickname})`
+  );
 
-  let signInData = await getSignInData(authedHeaders, activity.id);
+  let signInData =
+    initialSignInData || await getSignInData(authedHeaders, activity);
+
   logSignStatus(signInData);
 
   let makeupCount = 0;
@@ -216,35 +485,42 @@ async function processSingleActivity(nickname, authedHeaders, activity) {
 
   while (true) {
     const makeupItems = getMakeupItems(signInData.sign_in_list);
-    logInfo(`目前可補簽 ${makeupItems.length} 天`);
+    const remainAppendingDays = Number(
+      signInData.remain_appending_days || 0
+    );
 
-    if (makeupItems.length === 0 || signInData.remain_appending_days <= 0) {
+    logInfo(`目前可补签 ${makeupItems.length} 天`);
+
+    if (makeupItems.length === 0 || remainAppendingDays <= 0) {
       break;
     }
 
     const item = makeupItems[0];
-    logInfo(`開始補簽：day ${item.day_no}`);
+    logInfo(`开始补签: day ${item.day_no}`);
 
-    await receiveMakeupSignIn(authedHeaders, activity.id, item);
+    await receiveMakeupSignIn(authedHeaders, activity, item);
     makeupCount++;
-    logOk(`補簽成功 day ${item.day_no}`);
+    logOk(`补签成功 day ${item.day_no}`);
 
     await randomSleep(1500, 3500);
-    signInData = await getSignInData(authedHeaders, activity.id);
+    signInData = await getSignInData(authedHeaders, activity);
   }
 
   const today = getTodayItem(signInData.sign_in_list);
 
   if (today) {
-    logInfo(`今天可以簽到 day ${today.day_no}`);
-    await receiveTodaySignIn(authedHeaders, activity.id);
+    logInfo(`今天可以签到 day ${today.day_no}`);
+    await receiveTodaySignIn(authedHeaders, activity);
     todaySigned = true;
-    logOk("今天簽到成功");
+    logOk("今天签到成功");
     await randomSleep(1500, 3500);
-  } else if (signInData.has_sign_in_days >= signInData.sign_in_list_total) {
-    logOk("今天已簽到");
+  } else if (
+    Number(signInData.has_sign_in_days || 0) >=
+    Number(signInData.sign_in_list_total || signInData.sign_in_list.length)
+  ) {
+    logOk("今天已签到");
   } else {
-    logInfo("沒有今天可簽項目");
+    logInfo("没有今天可签到的项目");
   }
 
   return {
@@ -270,7 +546,12 @@ function recordActivityFailure(activity, uid, error) {
   activityStats.failures.push({ uid: maskUid(uid), error: error.message });
 }
 
-async function processActivitiesForAccount(uid, nickname, authedHeaders, activities) {
+async function processActivitiesForAccount(
+  uid,
+  nickname,
+  authedHeaders,
+  activities
+) {
   const results = [];
   const failures = [];
 
@@ -287,7 +568,8 @@ async function processActivitiesForAccount(uid, nickname, authedHeaders, activit
       recordActivityFailure(activity, uid, error);
       failures.push({ activity, error });
       logError(
-        `活動處理失敗：${activity.name} / ${activity.id} (${nickname})\n原因: ${error.message}`
+        `活动处理失败: ${activity.name} / ${activity.id} (${nickname})\n` +
+        `原因: ${error.message}`
       );
     }
   }
@@ -308,6 +590,7 @@ function recordAccountResult(accountResult) {
 async function processUid(uid, activities) {
   console.log(`\n========== UID: ${maskUid(uid)} ==========`);
   const loginInfo = await login(uid);
+
   return processActivitiesForAccount(
     uid,
     loginInfo.nickname,
@@ -320,11 +603,12 @@ function buildActivitySummary() {
   return [...stats.byActivity.values()]
     .map(item =>
 `${item.activity.name} (${item.activity.id})
+  接口: ${item.activity.baseName}
   成功: ${item.success}
-  失敗: ${item.failed}
-  今日簽到: ${item.today}
-  補簽次數: ${item.makeup}
-  已完成/無需操作: ${item.alreadyDone}`
+  失败: ${item.failed}
+  今日签到: ${item.today}
+  补签次数: ${item.makeup}
+  已完成/无需操作: ${item.alreadyDone}`
     )
     .join("\n\n");
 }
@@ -335,87 +619,98 @@ async function main() {
   let uids;
   try {
     uids = await fetchApprovedUids();
-  } catch (err) {
-    const msg = `🚨 Top Heroes 簽到中止\n取得 Approved UID 失敗。\n原因: ${err.message}`;
-    logError(msg);
-    await sendDiscord(msg);
+  } catch (error) {
+    const message =
+      `🚨 Top Heroes 签到中止\n` +
+      `取得 Approved UID 失败。\n` +
+      `原因: ${error.message}`;
+
+    logError(message);
+    await sendDiscord(message);
     process.exit(1);
   }
 
   stats.total = uids.length;
-  logInfo(`找到 ${uids.length} 個已 Approved 的帳號`);
+  logInfo(`找到 ${uids.length} 个已 Approved 的账号`);
 
   if (uids.length === 0) {
-    logInfo("沒有 UID，結束。");
-    process.exit(0);
+    logInfo("没有 UID，结束。");
+    return;
   }
 
   let activities = [];
 
   try {
     const firstUid = uids[0];
-    console.log(`\n========== 第一個 UID: ${maskUid(firstUid)} ==========`);
+    console.log(`\n========== 第一个 UID: ${maskUid(firstUid)} ==========`);
 
     const firstLogin = await login(firstUid);
-    logOk(`第一個帳號登錄成功 (${firstLogin.nickname})`);
+    logOk(`第一个账号登录成功 (${firstLogin.nickname})`);
 
-    const candidates = await getCurrentSignActivities(firstLogin.authedHeaders);
+    activities = await getCurrentSignActivities(firstLogin.authedHeaders);
 
-    for (const activity of candidates) {
+    for (const activity of activities) {
       try {
         const result = await processSingleActivity(
           firstLogin.nickname,
           firstLogin.authedHeaders,
-          activity
+          activity,
+          activity.initialSignInData
         );
 
+        delete activity.initialSignInData;
+        delete activity.attempts;
+
         recordActivitySuccess(result);
-        activities.push(activity);
-        logOk(`活動驗證成功：${activity.name} / ${activity.id} / source=${activity.source || "unknown"}`);
+        logOk(
+          `活动完成: ${activity.name} / ${activity.id} / ` +
+          `source=${activity.source}`
+        );
       } catch (error) {
-        stats.rejectedActivities.push({ activity, error: error.message });
-        logError(
-          `活動驗證失敗，後續帳號將跳過：${activity.name} / ${activity.id}\n原因: ${error.message}`
+        recordActivityFailure(activity, firstUid, error);
+        throw new Error(
+          `第一个账号处理活动 ${activity.id} 失败: ${error.message}`
         );
       }
     }
 
-    if (activities.length === 0) {
-      throw new Error("所有候選簽到活動驗證失敗");
-    }
-
     stats.success++;
-    logOk(`第一個帳號完成，共處理 ${activities.length} 個有效活動`);
-  } catch (err) {
+    logOk(`第一个账号完成，共处理 ${activities.length} 个有效活动`);
+  } catch (error) {
     stats.failed++;
 
-    const msg =
-`🚨 Top Heroes 簽到中止
-第一個 UID 失敗，已停止後續帳號。
+    const message =
+`🚨 Top Heroes 签到中止
+第一个 UID 失败，已停止后续账号。
 UID: ${maskUid(uids[0])}
-原因: ${err.message}`;
+原因: ${error.message}`;
 
-    logError(msg);
-    await sendDiscord(msg);
+    logError(message);
+    await sendDiscord(message);
     process.exit(1);
   }
 
-  logInfo(`本次確認有效的簽到活動: ${activities.length}`);
+  logInfo(`本次确认有效的签到活动: ${activities.length}`);
   for (const activity of activities) {
-    logInfo(`✓ ${activity.name} / biz_id=${activity.id} / source=${activity.source || "unknown"}`);
+    logInfo(
+      `✓ ${activity.name} / activity_id=${activity.id} / ` +
+      `${activity.baseName} / source=${activity.source}`
+    );
   }
 
-  await randomSleep(5000, 10000);
+  if (uids.length > 1) {
+    await randomSleep(5000, 10000);
+  }
 
-  const CONCURRENCY = Number(process.env.CONCURRENCY || 3);
-  const STAGGER_MS = Number(process.env.STAGGER_MS || 2000);
+  const concurrency = Number(process.env.CONCURRENCY || 2);
+  const staggerMs = Number(process.env.STAGGER_MS || 1000);
 
-  logInfo(`並發數: ${CONCURRENCY}`);
-  logInfo(`Worker 錯開啟動: ${STAGGER_MS}ms`);
+  logInfo(`并发数: ${concurrency}`);
+  logInfo(`Worker 错开启动: ${staggerMs}ms`);
 
   await runWithConcurrency(
     uids.slice(1),
-    CONCURRENCY,
+    concurrency,
     async (uid, index, workerId) => {
       const realIndex = index + 1;
 
@@ -427,53 +722,58 @@ UID: ${maskUid(uids[0])}
         const failed = result.failures.length;
 
         if (failed === 0) {
-          logOk(`完成：${result.nickname}，活動 ${completed}/${activities.length}`);
+          logOk(
+            `完成: ${result.nickname}，活动 ${completed}/${activities.length}`
+          );
         } else {
-          const msg =
-`⚠️ Top Heroes 簽到部分失敗
-進度: ${realIndex + 1}/${uids.length}
+          const message =
+`⚠️ Top Heroes 签到部分失败
+进度: ${realIndex + 1}/${uids.length}
 Worker: ${workerId}
 UID: ${maskUid(uid)}
-暱稱: ${result.nickname}
-成功活動: ${completed}
-失敗活動: ${failed}
-${result.failures.map(x => `- ${x.activity.name} (${x.activity.id}): ${x.error.message}`).join("\n")}`;
+昵称: ${result.nickname}
+成功活动: ${completed}
+失败活动: ${failed}
+${result.failures
+  .map(item => `- ${item.activity.name} (${item.activity.id}): ${item.error.message}`)
+  .join("\n")}`;
 
-          stats.failures.push(msg);
-          logError(msg);
-          await sendDiscord(msg);
+          stats.failures.push(message);
+          logError(message);
+          await sendDiscord(message);
         }
-      } catch (err) {
+      } catch (error) {
         stats.failed++;
 
-        const msg =
-`❌ Top Heroes 簽到失敗
-進度: ${realIndex + 1}/${uids.length}
+        const message =
+`❌ Top Heroes 签到失败
+进度: ${realIndex + 1}/${uids.length}
 Worker: ${workerId}
 UID: ${maskUid(uid)}
-原因: ${err.message}`;
+原因: ${error.message}`;
 
-        stats.failures.push(msg);
-        logError(msg);
-        await sendDiscord(msg);
+        stats.failures.push(message);
+        logError(message);
+        await sendDiscord(message);
       }
     },
-    STAGGER_MS
+    staggerMs
   );
 
   const rejectedSummary = stats.rejectedActivities.length > 0
-    ? `\n\n已排除活動:\n${stats.rejectedActivities
-        .map(x => `- ${x.activity.name} (${x.activity.id}): ${x.error}`)
+    ? `\n\n已排除候选活动:\n${stats.rejectedActivities
+        .map(item => `- ${item.activity.id}: ${item.error}`)
         .join("\n")}`
     : "";
 
   const summary =
-`✅ Top Heroes 簽到完成
-有效活動數: ${activities.length}
-帳號總數: ${stats.total}
+`✅ Top Heroes 签到完成
+有效活动数: ${activities.length}
+活动 ID: ${activities.map(item => item.id).join(", ")}
+账号总数: ${stats.total}
 全部成功: ${stats.success}
 部分成功: ${stats.partial}
-完全失敗: ${stats.failed}
+完全失败: ${stats.failed}
 
 ${buildActivitySummary()}${rejectedSummary}`;
 
@@ -483,9 +783,9 @@ ${buildActivitySummary()}${rejectedSummary}`;
   logOk("全部完成！");
 }
 
-main().catch(async err => {
-  const msg = `🚨 Top Heroes 簽到程式異常\n原因: ${err.message}`;
-  logError(msg);
-  await sendDiscord(msg);
+main().catch(async error => {
+  const message = `🚨 Top Heroes 签到程序异常\n原因: ${error.message}`;
+  logError(message);
+  await sendDiscord(message);
   process.exit(1);
 });

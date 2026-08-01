@@ -2,6 +2,12 @@ name: Top Heroes Daily Sign-in
 
 on:
   workflow_dispatch:
+    inputs:
+      activity_id:
+        description: '签到活动 ID（留空自动发现；填写后只处理该 ID）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   sign-in:
@@ -23,5 +29,6 @@ jobs:
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
           APPS_SCRIPT_KEY: ${{ secrets.APPS_SCRIPT_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SIGNIN_ACTIVITY_ID: ${{ inputs.activity_id }}
           CONCURRENCY: 2
           STAGGER_MS: 1000

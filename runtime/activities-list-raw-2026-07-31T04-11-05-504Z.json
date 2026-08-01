@@ -1,0 +1,72 @@
+[
+  {
+    "name": "status=2",
+    "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/list?project_id=1028637&status=2",
+    "count": 0,
+    "response": {
+      "code": 1,
+      "data": {
+        "list": null,
+        "total": 0
+      },
+      "message": "",
+      "timestamp": 1785471065
+    }
+  },
+  {
+    "name": "no-status",
+    "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/list?project_id=1028637",
+    "count": 0,
+    "response": {
+      "code": 1,
+      "data": {
+        "list": null,
+        "total": 0
+      },
+      "message": "",
+      "timestamp": 1785471066
+    }
+  },
+  {
+    "name": "status=1",
+    "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/list?project_id=1028637&status=1",
+    "count": 0,
+    "response": {
+      "code": 1,
+      "data": {
+        "list": null,
+        "total": 0
+      },
+      "message": "",
+      "timestamp": 1785471067
+    }
+  },
+  {
+    "name": "status=0",
+    "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/list?project_id=1028637&status=0",
+    "count": 0,
+    "response": {
+      "code": 1,
+      "data": {
+        "list": null,
+        "total": 0
+      },
+      "message": "",
+      "timestamp": 1785471068
+    }
+  },
+  {
+    "name": "status=2-site-id",
+    "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/list?project_id=1028637&site_id=1028526&status=2",
+    "count": 0,
+    "response": {
+      "code": 1,
+      "data": {
+        "list": null,
+        "total": 0
+      },
+      "message": "",
+      "timestamp": 1785471070
+    }
+  }
+]

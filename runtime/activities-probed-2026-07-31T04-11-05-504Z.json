@@ -1,0 +1,201 @@
+[
+  {
+    "biz_id": 3431,
+    "name": "Known activity 3431",
+    "activity_type": 4,
+    "probe": {
+      "activity_id": 3431,
+      "url": "https://topheroes.pay-store.rivergame.net/api/v2/store/sale/biz/sign-in-list?activity_id=3431&page_size=365&site_id=1028526&page_no=1",
+      "ok": true,
+      "code": 1,
+      "message": "",
+      "returned_activity_id": 3431,
+      "days": 7,
+      "sign_in_list_total": 4,
+      "has_sign_in_days": 4,
+      "remain_appending_days": 1,
+      "available_days": [
+        5
+      ],
+      "signed_days": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "response": {
+        "code": 1,
+        "data": {
+          "activity_id": 3431,
+          "allow_remediation": true,
+          "has_sign_in_days": 4,
+          "remain_appending_days": 1,
+          "sign_in_list_total": 4,
+          "sign_in_list": [
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782469844629_icon_30400.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220203",
+                  "gift_goods_name": "220203",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386999308_icon_30400.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 1,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471456551_3.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "203038",
+                  "gift_goods_name": "203038",
+                  "num": 2,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1745562353438_icon_30375.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 2,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471434060_2.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "161005",
+                  "gift_goods_name": "161005",
+                  "num": 5,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1744202053791_icon_30104.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 3,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782470092447_icon_30397.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "236",
+                  "gift_goods_name": "236",
+                  "num": 5,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1760356766092_icon_30397.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 4,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1783340206071_worldskin_317.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "20417",
+                  "gift_goods_name": "20417",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1782994270978_worldskin_317.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 2,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 5,
+              "is_sign_in": false,
+              "is_available_sign_in": true,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782470789911_icon_30177.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220005",
+                  "gift_goods_name": "220005",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386989177_icon_30177.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 6,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471816329_4.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220203",
+                  "gift_goods_name": "220203",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386999308_icon_30400.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 7,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            }
+          ],
+          "consecutive_list": []
+        },
+        "message": "",
+        "timestamp": 1785471072
+      }
+    }
+  }
+]

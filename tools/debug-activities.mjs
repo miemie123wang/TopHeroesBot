@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  BASE,
+  OLD_BASE,
+  NEW_BASE,
   SITE_ID,
   PROJECT_ID,
+  MERCHANT_ID,
   DEBUG_UID,
 } from "../core/config.mjs";
 
@@ -14,30 +16,65 @@ import { sleep } from "../core/sleep.mjs";
 import {
   logInfo,
   logOk,
+  logWarn,
   logError,
 } from "../core/logger.mjs";
 import { maskUid } from "../core/utils.mjs";
 
 /**
- * 旧商城 API 域名。
- * 当前 core/config.mjs 里的 BASE 应该是：
+ * 目的：
+ *
+ * 1. 正常登录，取得带账号身份的请求头。
+ * 2. 探测多个商城域名的活动列表接口。
+ * 3. 重点测试仍能通过 biz_id=3256 返回数据的 KOP 域名。
+ * 4. 自动寻找所有 activity_type=4 的签到活动。
+ * 5. 对发现的签到活动调用 sign-in-list 验证。
+ *
+ * 此脚本只查询，不会执行签到。
+ */
+
+const STORE_TOPHEROES_BASE =
+  "https://store.topheroes.com";
+
+/**
+ * 这些 ID 只用于对照诊断。
+ *
+ * 即使活动列表没有自动发现它们，也会查询它们的
+ * sign-in-list，确认活动是否仍然有效。
+ *
+ * 它们不会被冒充成“自动发现结果”。
+ */
+const KNOWN_SIGNIN_IDS_FOR_DIAGNOSTIC = [
+  3431,
+  1113212,
+];
+
+/**
+ * 当前已知的三个商城 API 域名。
+ *
+ * OLD_BASE:
+ * https://topheroes.store.kopglobal.com
+ *
+ * NEW_BASE:
  * https://topheroes.pay-store.rivergame.net
  */
-const OLD_STORE_BASE = BASE;
+const BASES = [
+  {
+    name: "kopglobal-old-mall",
+    url: OLD_BASE,
+  },
+  {
+    name: "rivergame-new-mall",
+    url: NEW_BASE,
+  },
+  {
+    name: "store-topheroes-alias",
+    url: STORE_TOPHEROES_BASE,
+  },
+];
 
 /**
- * 网页目前实际使用的新商城 API 域名。
- */
-const NEW_STORE_BASE = "https://store.topheroes.com";
-
-/**
- * 当活动列表接口返回空时，直接探测已知活动。
- * 这里只查询签到状态，不会执行签到。
- */
-const KNOWN_ACTIVITY_IDS = [3431];
-
-/**
- * 兼容不同活动列表返回结构。
+ * 兼容不同的活动列表响应结构。
  */
 function extractActivityList(response) {
   const possibleLists = [
@@ -55,11 +92,36 @@ function extractActivityList(response) {
   return [];
 }
 
+function getActivityId(activity) {
+  return Number(
+    activity?.biz_id ??
+      activity?.activity_id ??
+      activity?.id ??
+      0
+  );
+}
+
+function getActivityName(activity) {
+  return String(
+    activity?.name ??
+      activity?.activity_name ??
+      ""
+  );
+}
+
+function getActivityType(activity) {
+  return Number(
+    activity?.activity_type ??
+      activity?.type ??
+      0
+  );
+}
+
 /**
- * 合并不同接口返回的活动，按照 biz_id 去重。
+ * 合并不同请求返回的活动，按照 biz_id 去重。
  */
 function mergeActivities(lists) {
-  const activityMap = new Map();
+  const map = new Map();
 
   for (const list of lists) {
     if (!Array.isArray(list)) {
@@ -67,244 +129,409 @@ function mergeActivities(lists) {
     }
 
     for (const activity of list) {
-      const activityId = Number(
-        activity?.biz_id ??
-        activity?.activity_id ??
-        activity?.id ??
-        0
-      );
+      const activityId = getActivityId(activity);
 
       if (!activityId) {
         continue;
       }
 
-      const oldActivity = activityMap.get(activityId) || {};
-
-      activityMap.set(activityId, {
-        ...oldActivity,
+      map.set(activityId, {
+        ...(map.get(activityId) || {}),
         ...activity,
-        biz_id:
-          activity?.biz_id ??
-          activity?.activity_id ??
-          activity?.id ??
-          activityId,
+        biz_id: activityId,
       });
     }
   }
 
-  return [...activityMap.values()];
+  return [...map.values()];
 }
 
 /**
- * 测试旧域名和新域名的活动列表接口。
+ * 为每个域名生成活动列表探测请求。
  */
-async function getActivities(authedHeaders) {
-  const requests = [
-    // 旧域名
-    {
-      name: "old-domain-status=2",
-      domain: "old",
-      url:
-        `${OLD_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=2`,
-    },
-    {
-      name: "old-domain-no-status",
-      domain: "old",
-      url:
-        `${OLD_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}`,
-    },
-    {
-      name: "old-domain-status=1",
-      domain: "old",
-      url:
-        `${OLD_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=1`,
-    },
-    {
-      name: "old-domain-status=0",
-      domain: "old",
-      url:
-        `${OLD_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=0`,
-    },
-    {
-      name: "old-domain-status=2-site-id",
-      domain: "old",
-      url:
-        `${OLD_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}` +
-        `&site_id=${SITE_ID}` +
-        `&status=2`,
-    },
+function buildListRequests(baseUrl) {
+  const endpoint =
+    `${baseUrl}/api/v2/store/sale/biz/list`;
 
-    // 新域名
-    {
-      name: "new-domain-status=2",
-      domain: "new",
-      url:
-        `${NEW_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=2`,
-    },
-    {
-      name: "new-domain-no-status",
-      domain: "new",
-      url:
-        `${NEW_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}`,
-    },
-    {
-      name: "new-domain-status=1",
-      domain: "new",
-      url:
-        `${NEW_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=1`,
-    },
-    {
-      name: "new-domain-status=0",
-      domain: "new",
-      url:
-        `${NEW_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}&status=0`,
-    },
-    {
-      name: "new-domain-status=2-site-id",
-      domain: "new",
-      url:
-        `${NEW_STORE_BASE}/api/v2/store/sale/biz/list` +
-        `?project_id=${PROJECT_ID}` +
-        `&site_id=${SITE_ID}` +
-        `&status=2`,
-    },
+  const queryCases = [
+    /**
+     * 已知可以返回活动 3256。
+     * 用于确认域名、接口和登录请求头是否可用。
+     */
+    [
+      "known-biz-3256",
+      {
+        biz_id: 3256,
+      },
+    ],
+
+    /**
+     * 原正式签到程序使用的查询。
+     */
+    [
+      "project-status2",
+      {
+        project_id: PROJECT_ID,
+        status: 2,
+      },
+    ],
+
+    /**
+     * 不带 status。
+     */
+    [
+      "project-only",
+      {
+        project_id: PROJECT_ID,
+      },
+    ],
+
+    /**
+     * 加入 site_id。
+     */
+    [
+      "project-site-status2",
+      {
+        project_id: PROJECT_ID,
+        site_id: SITE_ID,
+        status: 2,
+      },
+    ],
+
+    /**
+     * 加入 merchant_id。
+     */
+    [
+      "project-merchant-status2",
+      {
+        project_id: PROJECT_ID,
+        merchant_id: MERCHANT_ID,
+        status: 2,
+      },
+    ],
+
+    /**
+     * 同时加入 site_id 和 merchant_id。
+     */
+    [
+      "project-site-merchant-status2",
+      {
+        project_id: PROJECT_ID,
+        site_id: SITE_ID,
+        merchant_id: MERCHANT_ID,
+        status: 2,
+      },
+    ],
+
+    /**
+     * 测试接口现在是否要求分页参数。
+     */
+    [
+      "project-page-status2",
+      {
+        project_id: PROJECT_ID,
+        status: 2,
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
+    [
+      "project-page-no-status",
+      {
+        project_id: PROJECT_ID,
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
+
+    /**
+     * 直接查询签到类型 activity_type=4。
+     */
+    [
+      "project-type4-status2",
+      {
+        project_id: PROJECT_ID,
+        activity_type: 4,
+        status: 2,
+      },
+    ],
+    [
+      "project-type4-no-status",
+      {
+        project_id: PROJECT_ID,
+        activity_type: 4,
+      },
+    ],
+    [
+      "project-type4-page",
+      {
+        project_id: PROJECT_ID,
+        activity_type: 4,
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
+
+    /**
+     * 测试字段是否从 status 改成了 activity_status。
+     */
+    [
+      "project-activity-status2",
+      {
+        project_id: PROJECT_ID,
+        activity_status: 2,
+      },
+    ],
+
+    /**
+     * 测试现在是否只认 merchant_id。
+     */
+    [
+      "merchant-status2",
+      {
+        merchant_id: MERCHANT_ID,
+        status: 2,
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
+
+    /**
+     * 测试现在是否只认 site_id。
+     */
+    [
+      "site-status2",
+      {
+        site_id: SITE_ID,
+        status: 2,
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
+
+    /**
+     * 不带业务筛选，只带分页。
+     */
+    [
+      "page-only",
+      {
+        page_no: 1,
+        page_size: 500,
+      },
+    ],
   ];
 
-  const rawResults = [];
-  const activityLists = [];
+  return queryCases.map(([caseName, params]) => {
+    const query = new URLSearchParams();
 
-  for (const request of requests) {
-    logInfo(`测试活动列表接口: ${request.name}`);
-    logInfo(request.url);
-
-    try {
-      const response = await fetchJson(request.url, {
-        headers: authedHeaders,
-      });
-
-      const list = extractActivityList(response);
-
-      activityLists.push(list);
-
-      rawResults.push({
-        name: request.name,
-        domain: request.domain,
-        url: request.url,
-        count: list.length,
-        total:
-          response?.data?.total ??
-          response?.total ??
-          null,
-        response,
-      });
-
-      logInfo(
-        `${request.name} 返回活动数量: ${list.length}; ` +
-        `原始 total: ${
-          response?.data?.total ??
-          response?.total ??
-          "unknown"
-        }`
-      );
-    } catch (error) {
-      rawResults.push({
-        name: request.name,
-        domain: request.domain,
-        url: request.url,
-        error: error.message,
-      });
-
-      logError(
-        `${request.name} 请求失败: ${error.message}`
-      );
+    for (const [key, value] of Object.entries(
+      params
+    )) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        value !== ""
+      ) {
+        query.set(key, String(value));
+      }
     }
 
-    await sleep(300);
+    return {
+      caseName,
+      url: `${endpoint}?${query.toString()}`,
+    };
+  });
+}
+
+/**
+ * 探测所有域名和查询参数组合。
+ */
+async function exploreActivityLists(
+  authedHeaders
+) {
+  const rawResults = [];
+  const allLists = [];
+
+  for (const base of BASES) {
+    logInfo(
+      `\n===== 探测域名: ${base.name} =====`
+    );
+
+    logInfo(base.url);
+
+    const requests = buildListRequests(base.url);
+
+    for (const request of requests) {
+      const requestName =
+        `${base.name}/${request.caseName}`;
+
+      logInfo(`测试: ${requestName}`);
+
+      try {
+        const response = await fetchJson(
+          request.url,
+          {
+            headers: authedHeaders,
+          },
+          0
+        );
+
+        const list =
+          extractActivityList(response);
+
+        const ids = list
+          .map(getActivityId)
+          .filter(Boolean);
+
+        const signInActivities = list.filter(
+          activity =>
+            getActivityType(activity) === 4
+        );
+
+        allLists.push(list);
+
+        rawResults.push({
+          base_name: base.name,
+          base_url: base.url,
+          case_name: request.caseName,
+          url: request.url,
+          count: list.length,
+          total:
+            response?.data?.total ??
+            response?.total ??
+            null,
+          ids,
+          sign_in_ids: signInActivities
+            .map(getActivityId)
+            .filter(Boolean),
+          response,
+        });
+
+        const total =
+          response?.data?.total ??
+          response?.total ??
+          "unknown";
+
+        logInfo(
+          `${requestName}: ` +
+            `count=${list.length}, ` +
+            `total=${total}`
+        );
+
+        if (ids.length > 0) {
+          logOk(
+            `${requestName} 活动 ID: ` +
+              ids.slice(0, 30).join(",") +
+              (ids.length > 30 ? " ..." : "")
+          );
+        }
+
+        if (signInActivities.length > 0) {
+          logOk(
+            `${requestName} 找到签到活动: ` +
+              signInActivities
+                .map(
+                  activity =>
+                    `${getActivityId(activity)} ` +
+                    `${getActivityName(activity)}`
+                )
+                .join(" | ")
+          );
+        }
+      } catch (error) {
+        rawResults.push({
+          base_name: base.name,
+          base_url: base.url,
+          case_name: request.caseName,
+          url: request.url,
+          error: error.message,
+        });
+
+        logWarn(
+          `${requestName} 失败: ` +
+            error.message
+        );
+      }
+
+      await sleep(250);
+    }
   }
 
   return {
-    activities: mergeActivities(activityLists),
     rawResults,
+    activities: mergeActivities(allLists),
   };
 }
 
 /**
  * 在指定域名查询某个签到活动。
  */
-async function probeSignInOnBase(
+async function probeSignInAtBase(
   authedHeaders,
   activityId,
-  baseUrl,
-  baseName
+  base
 ) {
   const url =
-    `${baseUrl}/api/v2/store/sale/biz/sign-in-list` +
+    `${base.url}/api/v2/store/sale/biz/sign-in-list` +
     `?page_size=365` +
     `&site_id=${SITE_ID}` +
     `&page_no=1` +
     `&activity_id=${activityId}`;
 
   try {
-    const response = await fetchJson(url, {
-      headers: authedHeaders,
-    });
+    const response = await fetchJson(
+      url,
+      {
+        headers: authedHeaders,
+      },
+      0
+    );
 
-    const signInList = response?.data?.sign_in_list;
+    const signInList =
+      response?.data?.sign_in_list;
 
     return {
-      base_name: baseName,
-      base_url: baseUrl,
+      domain: base.name,
       url,
       ok:
         Array.isArray(signInList) &&
         signInList.length > 0,
       code: response?.code,
-      message: response?.message,
       returned_activity_id:
         response?.data?.activity_id,
-      days:
-        Array.isArray(signInList)
-          ? signInList.length
-          : 0,
-      sign_in_list_total:
-        response?.data?.sign_in_list_total,
+      days: Array.isArray(signInList)
+        ? signInList.length
+        : 0,
       has_sign_in_days:
         response?.data?.has_sign_in_days,
-      remain_appending_days:
-        response?.data?.remain_appending_days,
-      available_days:
-        Array.isArray(signInList)
-          ? signInList
-              .filter(
-                item =>
-                  item.is_available_sign_in === true &&
-                  item.is_sign_in !== true
-              )
-              .map(item => item.day_no)
-          : [],
-      signed_days:
-        Array.isArray(signInList)
-          ? signInList
-              .filter(
-                item => item.is_sign_in === true
-              )
-              .map(item => item.day_no)
-          : [],
+      sign_in_list_total:
+        response?.data?.sign_in_list_total,
+      signed_days: Array.isArray(signInList)
+        ? signInList
+            .filter(
+              item =>
+                item.is_sign_in === true
+            )
+            .map(item => item.day_no)
+        : [],
+      available_days: Array.isArray(
+        signInList
+      )
+        ? signInList
+            .filter(
+              item =>
+                item.is_available_sign_in ===
+                  true &&
+                item.is_sign_in !== true
+            )
+            .map(item => item.day_no)
+        : [],
+      message: response?.message,
       response,
     };
   } catch (error) {
     return {
-      base_name: baseName,
-      base_url: baseUrl,
+      domain: base.name,
       url,
       ok: false,
       error: error.message,
@@ -313,139 +540,53 @@ async function probeSignInOnBase(
 }
 
 /**
- * 同时测试新旧两个域名的签到详情。
+ * 使用所有域名验证同一个签到活动。
  */
 async function probeSignInActivity(
   authedHeaders,
-  activity
+  activityId
 ) {
-  const activityId = Number(
-    activity?.biz_id ??
-    activity?.activity_id ??
-    activity?.id ??
-    0
-  );
-
   const attempts = [];
 
-  logInfo(
-    `Probe ${activityId} on new domain`
-  );
+  for (const base of BASES) {
+    logInfo(
+      `Probe 签到 ${activityId}: ` +
+        base.name
+    );
 
-  const newDomainResult = await probeSignInOnBase(
-    authedHeaders,
-    activityId,
-    NEW_STORE_BASE,
-    "new-domain"
-  );
+    attempts.push(
+      await probeSignInAtBase(
+        authedHeaders,
+        activityId,
+        base
+      )
+    );
 
-  attempts.push(newDomainResult);
-
-  await sleep(300);
-
-  logInfo(
-    `Probe ${activityId} on old domain`
-  );
-
-  const oldDomainResult = await probeSignInOnBase(
-    authedHeaders,
-    activityId,
-    OLD_STORE_BASE,
-    "old-domain"
-  );
-
-  attempts.push(oldDomainResult);
-
-  const selectedResult =
-    attempts.find(item => item.ok === true) ||
-    attempts[0];
-
-  return {
-    ...selectedResult,
-    attempts,
-  };
-}
-
-function compactActivity(activity, probe) {
-  return {
-    biz_id: activity.biz_id,
-    name: activity.name,
-    activity_type: activity.activity_type,
-    status: activity.status,
-    activity_switch: activity.activity_switch,
-    start_time: activity.start_time,
-    stop_time: activity.stop_time,
-    cycle_stop_time: activity.cycle_stop_time,
-    end_time: activity.end_time,
-    sort: activity.sort,
-    display_order: activity.display_order,
-    site_id: activity.site_id,
-    project_id: activity.project_id,
-    sign_in_total_days:
-      activity?.rule?.sign_in_total_days ??
-      activity?.sign_in_total_days,
-    probe,
-  };
-}
-
-function toMilliseconds(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return 0;
+    await sleep(250);
   }
 
-  const numericValue = Number(value);
-
-  if (Number.isFinite(numericValue)) {
-    return numericValue < 1_000_000_000_000
-      ? numericValue * 1000
-      : numericValue;
-  }
-
-  const parsedValue = Date.parse(value);
-
-  return Number.isFinite(parsedValue)
-    ? parsedValue
-    : 0;
+  return attempts;
 }
 
-function scoreCandidate(activity) {
-  const now = Date.now();
-
-  const start = toMilliseconds(
-    activity.start_time
+function printListSummary(rawResults) {
+  console.log(
+    "\n=== Activity list request summary ==="
   );
 
-  const stop = toMilliseconds(
-    activity.stop_time ??
-    activity.cycle_stop_time ??
-    activity.end_time
-  );
-
-  const inTimeRange =
-    (!start || now >= start) &&
-    (!stop || now <= stop);
-
-  const probeOk = activity.probe?.ok
-    ? 1
-    : 0;
-
-  const signedDays = Number(
-    activity.probe?.has_sign_in_days || 0
-  );
-
-  const availableDays =
-    activity.probe?.available_days?.length || 0;
-
-  return (
-    probeOk * 100000 +
-    (inTimeRange ? 10000 : 0) +
-    (availableDays > 0 ? 1000 : 0) +
-    (signedDays > 0 ? 500 : 0) +
-    Number(activity.biz_id || 0)
+  console.table(
+    rawResults.map(result => ({
+      domain: result.base_name,
+      case: result.case_name,
+      count: result.count ?? "",
+      total: result.total ?? "",
+      sign_in_ids:
+        result.sign_in_ids?.join(",") ?? "",
+      ids:
+        result.ids
+          ?.slice(0, 8)
+          .join(",") ?? "",
+      error: result.error ?? "",
+    }))
   );
 }
 
@@ -467,7 +608,8 @@ async function main() {
   });
 
   logOk(
-    `登入成功: ${loginInfo.nickname}`
+    `登入成功: ${loginInfo.nickname}; ` +
+      `login base=${loginInfo.baseUrl}`
   );
 
   fs.mkdirSync("runtime", {
@@ -479,15 +621,17 @@ async function main() {
     .replace(/[:.]/g, "-");
 
   const {
-    activities,
     rawResults,
-  } = await getActivities(
+    activities,
+  } = await exploreActivityLists(
     loginInfo.authedHeaders
   );
 
+  printListSummary(rawResults);
+
   const rawPath = path.join(
     "runtime",
-    `activities-list-raw-${stamp}.json`
+    `activity-api-explore-${stamp}.json`
   );
 
   fs.writeFileSync(
@@ -496,194 +640,154 @@ async function main() {
   );
 
   logOk(
-    `活动列表原始响应已输出: ${rawPath}`
+    `完整探测响应已输出: ${rawPath}`
   );
 
   logInfo(
-    `合并后活动总数: ${activities.length}`
+    `所有请求合并后活动数: ` +
+      activities.length
   );
 
-  const signInCandidates = activities
+  /**
+   * 只保留签到活动 activity_type=4。
+   */
+  const discoveredSignIns = activities
     .filter(
       activity =>
-        Number(activity.activity_type) === 4
+        getActivityType(activity) === 4
     )
     .sort(
       (a, b) =>
-        Number(b.biz_id || 0) -
-        Number(a.biz_id || 0)
+        getActivityId(b) -
+        getActivityId(a)
     );
-
-  logInfo(
-    `签到候选 activity_type=4: ${signInCandidates.length}`
-  );
-
-  const activityMap = new Map();
-
-  for (const activity of signInCandidates) {
-    activityMap.set(
-      Number(activity.biz_id),
-      activity
-    );
-  }
-
-  /**
-   * 如果活动列表全部为空，
-   * 仍然直接测试已知活动 3431。
-   */
-  for (const activityId of KNOWN_ACTIVITY_IDS) {
-    if (!activityMap.has(activityId)) {
-      activityMap.set(activityId, {
-        biz_id: activityId,
-        name: `Known activity ${activityId}`,
-        activity_type: 4,
-      });
-    }
-  }
-
-  const probedActivities = [];
-
-  for (const activity of activityMap.values()) {
-    logInfo(
-      `开始 Probe ${activity.biz_id} ${activity.name || ""}`
-    );
-
-    const probe = await probeSignInActivity(
-      loginInfo.authedHeaders,
-      activity
-    );
-
-    probedActivities.push(
-      compactActivity(activity, probe)
-    );
-
-    await sleep(500);
-  }
-
-  const ranked = [...probedActivities].sort(
-    (a, b) =>
-      scoreCandidate(b) -
-      scoreCandidate(a)
-  );
 
   console.log(
-    "\n=== Ranked sign-in candidates ==="
+    "\n=== Automatically discovered sign-in activities ==="
   );
 
   console.table(
-    ranked.map(activity => ({
-      score: scoreCandidate(activity),
-      biz_id: activity.biz_id,
-      name: activity.name,
-      ok: activity.probe?.ok,
-      source:
-        activity.probe?.base_name ?? "",
-      days:
-        activity.probe?.days ?? "",
-      returned_id:
-        activity.probe?.returned_activity_id ??
-        "",
-      total:
-        activity.probe?.sign_in_list_total ??
-        "",
-      has:
-        activity.probe?.has_sign_in_days ??
-        "",
-      signed:
-        activity.probe?.signed_days?.join(",") ??
-        "",
-      available:
-        activity.probe?.available_days?.join(",") ??
-        "",
+    discoveredSignIns.map(activity => ({
+      biz_id: getActivityId(activity),
+      name: getActivityName(activity),
+      type: getActivityType(activity),
       status:
-        activity.status ?? "",
+        activity.status ??
+        activity.activity_status ??
+        "",
       switch:
         activity.activity_switch ?? "",
-      start_time:
-        activity.start_time ?? "",
-      stop_time:
-        activity.stop_time ??
-        activity.cycle_stop_time ??
-        activity.end_time ??
+      start:
+        activity.start_time ??
+        activity.activity_start_time ??
         "",
-      message:
-        activity.probe?.message ||
-        activity.probe?.error ||
+      stop:
+        activity.stop_time ??
+        activity.activity_stop_time ??
+        activity.cycle_stop_time ??
         "",
     }))
   );
 
-  console.log(
-    "\n=== Domain comparison ==="
-  );
+  const discoveredIds = discoveredSignIns
+    .map(getActivityId)
+    .filter(Boolean);
 
-  for (const activity of ranked) {
-    console.log(
-      `\nActivity ${activity.biz_id} ${activity.name || ""}`
-    );
+  /**
+   * 自动发现到的 ID 会标记为 auto-discovered。
+   *
+   * 3431 和 1113212 只是诊断对照，
+   * 如果没有自动发现，它们不会被算作自动结果。
+   */
+  const probeIds = [
+    ...new Set([
+      ...discoveredIds,
+      ...KNOWN_SIGNIN_IDS_FOR_DIAGNOSTIC,
+    ]),
+  ];
 
-    console.table(
-      (activity.probe?.attempts || []).map(
-        attempt => ({
-          domain: attempt.base_name,
-          ok: attempt.ok,
-          days: attempt.days ?? "",
-          returned_id:
-            attempt.returned_activity_id ?? "",
-          total:
-            attempt.sign_in_list_total ?? "",
-          has:
-            attempt.has_sign_in_days ?? "",
-          signed:
-            attempt.signed_days?.join(",") ??
-            "",
-          available:
-            attempt.available_days?.join(",") ??
-            "",
-          message:
-            attempt.message ||
-            attempt.error ||
-            "",
-        })
-      )
-    );
+  const probeResults = [];
+
+  for (const activityId of probeIds) {
+    const source = discoveredIds.includes(
+      activityId
+    )
+      ? "auto-discovered"
+      : "known-diagnostic-only";
+
+    const attempts =
+      await probeSignInActivity(
+        loginInfo.authedHeaders,
+        activityId
+      );
+
+    probeResults.push({
+      activity_id: activityId,
+      source,
+      attempts,
+    });
   }
 
-  const fullPath = path.join(
-    "runtime",
-    `activities-full-${stamp}.json`
+  console.log(
+    "\n=== Sign-in probe summary ==="
   );
 
-  const probedPath = path.join(
+  console.table(
+    probeResults.flatMap(result =>
+      result.attempts.map(attempt => ({
+        activity_id: result.activity_id,
+        source: result.source,
+        domain: attempt.domain,
+        ok: attempt.ok,
+        returned_id:
+          attempt.returned_activity_id ?? "",
+        days: attempt.days ?? "",
+        has:
+          attempt.has_sign_in_days ?? "",
+        total:
+          attempt.sign_in_list_total ?? "",
+        signed:
+          attempt.signed_days?.join(",") ??
+          "",
+        available:
+          attempt.available_days?.join(",") ??
+          "",
+        message:
+          attempt.message ??
+          attempt.error ??
+          "",
+      }))
+    )
+  );
+
+  const probePath = path.join(
     "runtime",
-    `activities-probed-${stamp}.json`
+    `signin-probe-${stamp}.json`
   );
 
   fs.writeFileSync(
-    fullPath,
-    JSON.stringify(activities, null, 2)
-  );
-
-  fs.writeFileSync(
-    probedPath,
+    probePath,
     JSON.stringify(
-      probedActivities,
+      probeResults,
       null,
       2
     )
   );
 
   logOk(
-    `完整活动 JSON 已输出: ${fullPath}`
+    `签到 Probe 响应已输出: ${probePath}`
   );
 
-  logOk(
-    `Probe 结果已输出: ${probedPath}`
-  );
-
-  if (activities.length === 0) {
-    logInfo(
-      "⚠️ 所有活动列表查询都返回空，但已经直接 Probe 活动 3431。"
+  if (discoveredIds.length === 0) {
+    logWarn(
+      "本轮仍未自动发现 activity_type=4；" +
+        "请把 Activity list request summary " +
+        "和 activity-api-explore JSON 发回来。"
+    );
+  } else {
+    logOk(
+      `自动发现签到活动 ID: ` +
+        discoveredIds.join(",")
     );
   }
 }

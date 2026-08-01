@@ -1,0 +1,701 @@
+{
+  "generatedAt": "2026-08-01T16:57:58.070Z",
+  "uid": "17*********08",
+  "nickname": "咩小咩",
+  "builderInfoUrl": "https://store.topheroes.com/api/v2/store/site/builder/info?site_builder_id=1028526",
+  "candidateIds": [
+    3419,
+    1113212,
+    3256,
+    1113216,
+    1113217,
+    1113218,
+    1113219,
+    1113194,
+    1113197,
+    1113213,
+    1113195,
+    1113198,
+    1113214,
+    1113189,
+    3431
+  ],
+  "validSignInIds": [
+    1113212,
+    3431
+  ],
+  "expiredSignInIds": [],
+  "results": [
+    {
+      "activityId": 3419,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=3419",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity switch not open ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity switch not open ",
+        "timestamp": 1785603465
+      },
+      "fallbackError": "activity switch not open ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113212,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113212",
+      "code": 1,
+      "returnedId": 1113212,
+      "isSignInActivity": true,
+      "active": true,
+      "allExpired": false,
+      "days": 7,
+      "signedDays": [
+        1
+      ],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "hasSignInDays": 1,
+      "remainAppendingDays": 1,
+      "message": "",
+      "response": {
+        "code": 1,
+        "data": {
+          "activity_id": 1113212,
+          "allow_remediation": true,
+          "has_sign_in_days": 1,
+          "remain_appending_days": 1,
+          "sign_in_list_total": 1,
+          "sign_in_list": [
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "1980",
+                  "gift_goods_name": "1980",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1779964536648_icon_31189.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 1,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "1980",
+                  "gift_goods_name": "1980",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1779964536648_icon_31189.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 2,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "1980",
+                  "gift_goods_name": "1980",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1779964536648_icon_31189.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 3,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "1980",
+                  "gift_goods_name": "1980",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1779964536648_icon_31189.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 4,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "1980",
+                  "gift_goods_name": "1980",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1779964536648_icon_31189.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 5,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "161004",
+                  "gift_goods_name": "161004",
+                  "num": 8,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1744202019318_icon_30105.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 6,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "",
+              "gift_list": [
+                {
+                  "gift_goods_id": "161005",
+                  "gift_goods_name": "161005",
+                  "num": 4,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1744202053791_icon_30104.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 7,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            }
+          ],
+          "consecutive_list": []
+        },
+        "message": "",
+        "timestamp": 1785603466
+      }
+    },
+    {
+      "activityId": 3256,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=3256",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603466
+      },
+      "fallbackError": "activity type not match ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113216,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113216",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603467
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113217,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113217",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603467
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113218,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113218",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603468
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113219,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113219",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603468
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113194,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113194",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603469
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113197,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113197",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603470
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113213,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113213",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603471
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113195,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113195",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603472
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113198,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113198",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603472
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113214,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113214",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603474
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 1113189,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=1113189",
+      "code": 10000,
+      "returnedId": 0,
+      "isSignInActivity": false,
+      "active": false,
+      "allExpired": false,
+      "days": 0,
+      "signedDays": [],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "message": "activity type not match ",
+      "response": {
+        "code": 10000,
+        "data": null,
+        "message": "activity type not match ",
+        "timestamp": 1785603476
+      },
+      "fallbackError": "activity not exist ",
+      "fallbackCode": 10000
+    },
+    {
+      "activityId": 3431,
+      "baseName": "store.topheroes.com",
+      "url": "https://store.topheroes.com/api/v2/store/sale/biz/sign-in-list?page_size=365&site_id=1028526&page_no=1&activity_id=3431",
+      "code": 1,
+      "returnedId": 3431,
+      "isSignInActivity": true,
+      "active": true,
+      "allExpired": false,
+      "days": 7,
+      "signedDays": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "availableDays": [],
+      "makeupDays": [],
+      "expiredDays": [],
+      "hasSignInDays": 6,
+      "remainAppendingDays": 1,
+      "message": "",
+      "response": {
+        "code": 1,
+        "data": {
+          "activity_id": 3431,
+          "allow_remediation": true,
+          "has_sign_in_days": 6,
+          "remain_appending_days": 1,
+          "sign_in_list_total": 6,
+          "sign_in_list": [
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782469844629_icon_30400.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220203",
+                  "gift_goods_name": "220203",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386999308_icon_30400.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 1,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471456551_3.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "203038",
+                  "gift_goods_name": "203038",
+                  "num": 2,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1745562353438_icon_30375.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 2,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471434060_2.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "161005",
+                  "gift_goods_name": "161005",
+                  "num": 5,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1744202053791_icon_30104.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 3,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782470092447_icon_30397.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "236",
+                  "gift_goods_name": "236",
+                  "num": 5,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1760356766092_icon_30397.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 4,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1783340206071_worldskin_317.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "20417",
+                  "gift_goods_name": "20417",
+                  "num": 1,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1782994270978_worldskin_317.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 2,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 5,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782470789911_icon_30177.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220005",
+                  "gift_goods_name": "220005",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386989177_icon_30177.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                }
+              ],
+              "day_no": 6,
+              "is_sign_in": true,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            },
+            {
+              "cover": "https://kopglobal.com/site-builder/prod/store/1782471816329_4.png",
+              "gift_list": [
+                {
+                  "gift_goods_id": "220203",
+                  "gift_goods_name": "220203",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1740386999308_icon_30400.png",
+                  "level": 5,
+                  "level_icon": "https://kopglobal.com/site-builder/prod/store/1770954965853_quality_5.png"
+                },
+                {
+                  "gift_goods_id": "project_growth",
+                  "gift_goods_name": "vip_4",
+                  "num": 3,
+                  "gift_goods_logo": "https://kopglobal.com/site-builder/prod/store/1778656556035_20260422-151748.png",
+                  "level": 0,
+                  "level_icon": ""
+                }
+              ],
+              "day_no": 7,
+              "is_sign_in": false,
+              "is_available_sign_in": false,
+              "is_appending": false,
+              "is_expired": false
+            }
+          ],
+          "consecutive_list": []
+        },
+        "message": "",
+        "timestamp": 1785603477
+      }
+    }
+  ]
+}
