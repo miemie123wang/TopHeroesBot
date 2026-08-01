@@ -183,7 +183,7 @@ async function discoverFromKopActivityList(authedHeaders) {
       }))
       .filter(item => Number.isInteger(item.id) && item.id > 0);
 
-    logInfo(`KOP 活动列表补充 ${activities.length} 个签到候选`);
+    logInfo(`KOP 活动列表读取到 ${activities.length} 个签到候选，仅用于补充名称`);
 
     return activities;
   } catch (error) {
@@ -331,10 +331,29 @@ async function getCurrentSignActivities(authedHeaders) {
   } else {
     const builderCandidates = await discoverFromBuilderInfo(authedHeaders);
     const kopCandidates = await discoverFromKopActivityList(authedHeaders);
+    const kopById = new Map(
+      kopCandidates.map(candidate => [candidate.id, candidate])
+    );
 
-    candidates = mergeCandidates(builderCandidates, kopCandidates);
+    // builder/info 是商城当前页面真实使用的活动配置。
+    // KOP biz/list 会包含测试活动、常驻循环活动和历史活动，
+    // 因此这里只用它补充名称，绝不把 KOP 独有 ID 加入执行列表。
+    candidates = builderCandidates.map(candidate => {
+      const kop = kopById.get(candidate.id);
 
-    logInfo(`合并后共有 ${candidates.length} 个候选活动`);
+      return {
+        ...candidate,
+        name: kop?.name || candidate.name,
+        source: kop
+          ? "builder-info+kop-biz-list"
+          : "builder-info"
+      };
+    });
+
+    logInfo(
+      `最终使用 builder/info 中的 ${candidates.length} 个当前页面候选；` +
+      `KOP 列表仅补充名称，不加入额外活动`
+    );
   }
 
   if (candidates.length === 0) {
@@ -498,9 +517,28 @@ async function processSingleActivity(
     const item = makeupItems[0];
     logInfo(`开始补签: day ${item.day_no}`);
 
-    await receiveMakeupSignIn(authedHeaders, activity, item);
-    makeupCount++;
-    logOk(`补签成功 day ${item.day_no}`);
+    try {
+      await receiveMakeupSignIn(authedHeaders, activity, item);
+      makeupCount++;
+      logOk(`补签成功 day ${item.day_no}`);
+    } catch (error) {
+      const text = String(error?.message || error).toLowerCase();
+      const permissionDenied =
+        text.includes("permission denied") ||
+        text.includes('"code":10006');
+
+      // 补签是附加动作。接口可能显示可补签，但账号实际上没有权限。
+      // 这种情况不能让整个账号、更不能让全部账号中止。
+      if (permissionDenied) {
+        logWarn(
+          `补签 day ${item.day_no} 被拒绝，跳过补签并继续今天签到。` +
+          `原因: ${error.message}`
+        );
+        break;
+      }
+
+      throw error;
+    }
 
     await randomSleep(1500, 3500);
     signInData = await getSignInData(authedHeaders, activity);
@@ -649,6 +687,14 @@ async function main() {
 
     activities = await getCurrentSignActivities(firstLogin.authedHeaders);
 
+    const firstResult = {
+      nickname: firstLogin.nickname,
+      results: [],
+      failures: []
+    };
+
+    // 第一个账号也和后续账号一样：单个活动失败只记录，继续其余活动。
+    // 只有“登录失败”或“活动发现失败”才会中止，因为后续没有可复用的活动列表。
     for (const activity of activities) {
       try {
         const result = await processSingleActivity(
@@ -658,30 +704,50 @@ async function main() {
           activity.initialSignInData
         );
 
-        delete activity.initialSignInData;
-        delete activity.attempts;
-
         recordActivitySuccess(result);
+        firstResult.results.push(result);
         logOk(
           `活动完成: ${activity.name} / ${activity.id} / ` +
           `source=${activity.source}`
         );
       } catch (error) {
         recordActivityFailure(activity, firstUid, error);
-        throw new Error(
-          `第一个账号处理活动 ${activity.id} 失败: ${error.message}`
+        firstResult.failures.push({ activity, error });
+        logError(
+          `第一个账号活动失败，继续处理其他活动和账号: ` +
+          `${activity.name} / ${activity.id}\n原因: ${error.message}`
         );
+      } finally {
+        delete activity.initialSignInData;
+        delete activity.attempts;
       }
     }
 
-    stats.success++;
-    logOk(`第一个账号完成，共处理 ${activities.length} 个有效活动`);
+    recordAccountResult(firstResult);
+
+    if (firstResult.failures.length === 0) {
+      logOk(`第一个账号完成，共处理 ${activities.length} 个有效活动`);
+    } else {
+      const message =
+`⚠️ Top Heroes 第一个账号部分失败，但不会停止后续账号
+UID: ${maskUid(firstUid)}
+昵称: ${firstLogin.nickname}
+成功活动: ${firstResult.results.length}
+失败活动: ${firstResult.failures.length}
+${firstResult.failures
+  .map(item => `- ${item.activity.name} (${item.activity.id}): ${item.error.message}`)
+  .join("\n")}`;
+
+      stats.failures.push(message);
+      logWarn(message);
+      await sendDiscord(message);
+    }
   } catch (error) {
     stats.failed++;
 
     const message =
 `🚨 Top Heroes 签到中止
-第一个 UID 失败，已停止后续账号。
+无法使用第一个账号完成登录或活动发现，后续没有可靠活动列表。
 UID: ${maskUid(uids[0])}
 原因: ${error.message}`;
 
