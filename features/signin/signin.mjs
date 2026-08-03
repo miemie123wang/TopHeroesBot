@@ -18,6 +18,13 @@ import {
 
 const STORE_BASE = "https://store.topheroes.com";
 
+const SIGNIN_CHAIN_IDS = String(
+  process.env.SIGNIN_CHAIN_IDS || "1"
+)
+  .split(/[\s,;]+/)
+  .map(value => Number(value.trim()))
+  .filter(value => Number.isInteger(value) && value > 0);
+
 const SIGNIN_BASES = [
   { name: "store.topheroes.com", url: STORE_BASE },
   { name: "topheroes.store.kopglobal.com", url: OLD_BASE },
@@ -95,6 +102,40 @@ function extractBuilderCandidateIds(payload) {
   }
 
   return ids;
+}
+
+function getActivityQuery(activity) {
+  if (
+    activity?.protocol === "chain" &&
+    Number.isInteger(Number(activity?.chainId))
+  ) {
+    return `chain_id=${Number(activity.chainId)}`;
+  }
+
+  return `activity_id=${Number(activity.id)}`;
+}
+
+function getActivityIdentity(activity) {
+  if (
+    activity?.protocol === "chain" &&
+    Number.isInteger(Number(activity?.chainId))
+  ) {
+    return {
+      chain_id: Number(activity.chainId)
+    };
+  }
+
+  return {
+    activity_id: Number(activity.id)
+  };
+}
+
+function getProtocolLabel(activity) {
+  if (activity?.protocol === "chain") {
+    return `chain_id=${activity.chainId}`;
+  }
+
+  return `activity_id=${activity.id}`;
 }
 
 function extractActivityList(response) {
@@ -192,6 +233,93 @@ async function discoverFromKopActivityList(authedHeaders) {
   }
 }
 
+async function discoverChainActivities(authedHeaders) {
+  const discovered = [];
+  const seenActivityIds = new Set();
+
+  for (const chainId of SIGNIN_CHAIN_IDS) {
+    let matched = null;
+
+    for (const base of SIGNIN_BASES) {
+      const url =
+        `${base.url}/api/v2/store/sale/biz/sign-in-list` +
+        `?page_size=365` +
+        `&site_id=${SITE_ID}` +
+        `&page_no=1` +
+        `&chain_id=${chainId}` +
+        `&_=${Date.now()}`;
+
+      try {
+        const response = await fetchJson(
+          url,
+          {
+            headers: {
+              ...authedHeaders,
+              "cache-control": "no-cache, no-store, max-age=0",
+              pragma: "no-cache"
+            }
+          },
+          0
+        );
+
+        const signInData = response?.data;
+        const signInList = signInData?.sign_in_list;
+        const activityId = Number(signInData?.activity_id || 0);
+        const allExpired =
+          Array.isArray(signInList) &&
+          signInList.length > 0 &&
+          signInList.every(item => item?.is_expired === true);
+
+        if (
+          Number(response?.code) === 1 &&
+          Number.isInteger(activityId) &&
+          activityId > 0 &&
+          Array.isArray(signInList) &&
+          signInList.length > 0 &&
+          !allExpired
+        ) {
+          matched = {
+            id: activityId,
+            name: `签到活动 ${activityId}`,
+            source: "chain-id",
+            protocol: "chain",
+            chainId,
+            baseName: base.name,
+            baseUrl: base.url,
+            days: signInList.length,
+            initialSignInData: signInData
+          };
+
+          break;
+        }
+      } catch {
+        // 当前域名不支持该 chain_id，继续尝试其他域名。
+      }
+
+      await sleep(100);
+    }
+
+    if (matched && !seenActivityIds.has(matched.id)) {
+      seenActivityIds.add(matched.id);
+      discovered.push(matched);
+
+      logOk(
+        `发现链式签到活动: ${matched.id} / ` +
+        `chain_id=${matched.chainId} / ${matched.baseName}`
+      );
+    }
+  }
+
+  if (discovered.length === 0) {
+    logInfo(
+      `未发现链式签到活动；已检查 chain_id: ` +
+      `${SIGNIN_CHAIN_IDS.join(", ")}`
+    );
+  }
+
+  return discovered;
+}
+
 function validateSignInResponse(response, requestedId) {
   const signInData = response?.data;
   const signInList = signInData?.sign_in_list;
@@ -240,7 +368,8 @@ async function probeCandidateAtBase(authedHeaders, candidate, base) {
     `?page_size=365` +
     `&site_id=${SITE_ID}` +
     `&page_no=1` +
-    `&activity_id=${candidate.id}`;
+    `&${getActivityQuery(candidate)}` +
+    `&_=${Date.now()}`;
 
   try {
     const response = await fetchJson(
@@ -272,7 +401,14 @@ async function probeCandidateAtBase(authedHeaders, candidate, base) {
 async function verifyCandidate(authedHeaders, candidate) {
   const attempts = [];
 
-  for (const base of SIGNIN_BASES) {
+  const bases = candidate.baseUrl
+    ? [
+        ...SIGNIN_BASES.filter(base => base.url === candidate.baseUrl),
+        ...SIGNIN_BASES.filter(base => base.url !== candidate.baseUrl)
+      ]
+    : SIGNIN_BASES;
+
+  for (const base of bases) {
     const result = await probeCandidateAtBase(
       authedHeaders,
       candidate,
@@ -315,19 +451,40 @@ async function getCurrentSignActivities(authedHeaders) {
   const manualIds = getManualActivityIds();
   let candidates;
 
+  const chainActivities = await discoverChainActivities(authedHeaders);
+  const chainByActivityId = new Map(
+    chainActivities.map(activity => [activity.id, activity])
+  );
+
   if (manualIds.length > 0) {
     logWarn(
-      `使用手动活动 ID，跳过自动发现: ${manualIds.join(", ")}`
+      `使用手动活动 ID: ${manualIds.join(", ")}`
     );
 
-    candidates = manualIds.map(id => ({
-      id,
-      name:
-        manualIds.length === 1 && process.env.SIGNIN_ACTIVITY_NAME
-          ? process.env.SIGNIN_ACTIVITY_NAME
-          : `手动签到活动 ${id}`,
-      source: "manual"
-    }));
+    candidates = manualIds.map(id => {
+      const chain = chainByActivityId.get(id);
+
+      if (chain) {
+        return {
+          ...chain,
+          name:
+            manualIds.length === 1 && process.env.SIGNIN_ACTIVITY_NAME
+              ? process.env.SIGNIN_ACTIVITY_NAME
+              : `手动签到活动 ${id}`,
+          source: "manual+chain-id"
+        };
+      }
+
+      return {
+        id,
+        name:
+          manualIds.length === 1 && process.env.SIGNIN_ACTIVITY_NAME
+            ? process.env.SIGNIN_ACTIVITY_NAME
+            : `手动签到活动 ${id}`,
+        source: "manual",
+        protocol: "activity"
+      };
+    });
   } else {
     const builderCandidates = await discoverFromBuilderInfo(authedHeaders);
     const kopCandidates = await discoverFromKopActivityList(authedHeaders);
@@ -336,23 +493,42 @@ async function getCurrentSignActivities(authedHeaders) {
     );
 
     // builder/info 是商城当前页面真实使用的活动配置。
-    // KOP biz/list 会包含测试活动、常驻循环活动和历史活动，
-    // 因此这里只用它补充名称，绝不把 KOP 独有 ID 加入执行列表。
+    // KOP biz/list 仅补充名称，不能把独有测试/历史活动加入执行列表。
     candidates = builderCandidates.map(candidate => {
       const kop = kopById.get(candidate.id);
+      const chain = chainByActivityId.get(candidate.id);
 
       return {
         ...candidate,
-        name: kop?.name || candidate.name,
-        source: kop
-          ? "builder-info+kop-biz-list"
-          : "builder-info"
+        ...(chain || {}),
+        id: candidate.id,
+        name: kop?.name || chain?.name || candidate.name,
+        source: [
+          "builder-info",
+          kop ? "kop-biz-list" : "",
+          chain ? "chain-id" : ""
+        ]
+          .filter(Boolean)
+          .join("+"),
+        protocol: chain ? "chain" : "activity"
       };
     });
 
+    // chain_id 是网页当前真实使用的新签到协议。
+    // 即使 builder/info 在活动切换瞬间仍命中旧缓存，也要加入 chain 返回的新活动。
+    for (const chain of chainActivities) {
+      if (!candidates.some(candidate => candidate.id === chain.id)) {
+        candidates.push({
+          ...chain,
+          source: "chain-id"
+        });
+      }
+    }
+
     logInfo(
-      `最终使用 builder/info 中的 ${candidates.length} 个当前页面候选；` +
-      `KOP 列表仅补充名称，不加入额外活动`
+      `最终候选 ${candidates.length} 个：` +
+      `builder/info 当前页面活动 + chain_id 当前签到；` +
+      `KOP 列表仅补充名称`
     );
   }
 
@@ -405,18 +581,25 @@ async function getCurrentSignActivities(authedHeaders) {
 async function getSignInData(authedHeaders, activity) {
   const data = await fetchJson(
     `${activity.baseUrl}/api/v2/store/sale/biz/sign-in-list` +
-    `?activity_id=${activity.id}` +
-    `&page_size=365` +
+    `?page_size=365` +
     `&site_id=${SITE_ID}` +
-    `&page_no=1`,
-    { headers: authedHeaders }
+    `&page_no=1` +
+    `&${getActivityQuery(activity)}` +
+    `&_=${Date.now()}`,
+    {
+      headers: {
+        ...authedHeaders,
+        "cache-control": "no-cache, no-store, max-age=0",
+        pragma: "no-cache"
+      }
+    }
   );
 
   const validation = validateSignInResponse(data, activity.id);
 
   if (!validation.ok) {
     throw new Error(
-      `没有可用签到资料: activity_id=${activity.id}; ${validation.reason}`
+      `没有可用签到资料: ${getProtocolLabel(activity)}; ${validation.reason}`
     );
   }
 
@@ -440,7 +623,7 @@ async function receiveMakeupSignIn(authedHeaders, activity, item) {
       method: "POST",
       headers: authedHeaders,
       body: JSON.stringify({
-        activity_id: activity.id,
+        ...getActivityIdentity(activity),
         sign_in_type: 2,
         site_id: SITE_ID,
         day_no: item.day_no,
@@ -463,7 +646,7 @@ async function receiveTodaySignIn(authedHeaders, activity) {
       method: "POST",
       headers: authedHeaders,
       body: JSON.stringify({
-        activity_id: activity.id,
+        ...getActivityIdentity(activity),
         sign_in_type: 1,
         site_id: SITE_ID
       })
@@ -491,7 +674,7 @@ async function processSingleActivity(
 ) {
   logInfo(
     `开始处理活动: ${activity.name} / ${activity.id} / ` +
-    `${activity.baseName} (${nickname})`
+    `${getProtocolLabel(activity)} / ${activity.baseName} (${nickname})`
   );
 
   let signInData =
@@ -515,6 +698,19 @@ async function processSingleActivity(
     }
 
     const item = makeupItems[0];
+
+    // 目前只抓到了 chain 模式的“今日签到”真实请求：
+    // { sign_in_type: 1, site_id, chain_id }。
+    // chain 模式的补签 Payload 尚未抓到，不能猜参数。
+    // 为避免补签失败阻断今天签到，先跳过 chain 补签。
+    if (activity.protocol === "chain") {
+      logWarn(
+        `链式签到 ${getProtocolLabel(activity)} 暂不执行补签 day ${item.day_no}，` +
+        `继续处理今天签到`
+      );
+      break;
+    }
+
     logInfo(`开始补签: day ${item.day_no}`);
 
     try {
@@ -642,6 +838,7 @@ function buildActivitySummary() {
     .map(item =>
 `${item.activity.name} (${item.activity.id})
   接口: ${item.activity.baseName}
+  协议: ${getProtocolLabel(item.activity)}
   成功: ${item.success}
   失败: ${item.failed}
   今日签到: ${item.today}
@@ -759,7 +956,7 @@ UID: ${maskUid(uids[0])}
   logInfo(`本次确认有效的签到活动: ${activities.length}`);
   for (const activity of activities) {
     logInfo(
-      `✓ ${activity.name} / activity_id=${activity.id} / ` +
+      `✓ ${activity.name} / ${getProtocolLabel(activity)} / ` +
       `${activity.baseName} / source=${activity.source}`
     );
   }
