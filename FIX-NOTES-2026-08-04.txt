@@ -1,13 +1,12 @@
-TopHeroesBot11 header fix
+TopHeroesBot12 — store sign-in correction
 
-Root cause confirmed:
-- core/api.mjs used header key "Content-Type".
-- signin.mjs added another key "content-type".
-- Node fetch normalized and merged them into:
-  content-type: application/json, application/json
-- The new sign-in POST endpoint rejected that malformed media type with code 10003 Parameter exception.
-
-Fix:
-- Normalize all sign-in header names to lowercase before requests.
-- Ensure exactly one content-type: application/json.
-- Keep store.topheroes.com login, desktop UA, activity_id receive payload, and chain_id only for discovery/query.
+Confirmed fixes:
+1. store.topheroes.com login uses a desktop User-Agent and device=pc.
+2. All store/sign-in header names are normalized to lowercase before requests.
+3. Exactly one content-type header is sent. This fixes login/sign-in "Parameter exception" caused by:
+   Content-Type: application/json
+   content-type: application/json
+   being merged by Node into "application/json, application/json".
+4. New chain activity discovery may query with chain_id=1, but gift/receive always submits activity_id.
+5. Store login attempts are queued with a default 3000 ms minimum interval to reduce HTTP 429 during concurrency=2.
+   Override with STORE_LOGIN_MIN_INTERVAL_MS if needed.

@@ -34,6 +34,38 @@ const SIGNIN_BASES = [
     item.url && list.findIndex(other => other.url === item.url) === index
 );
 
+const STORE_LOGIN_MIN_INTERVAL_MS = Math.max(
+  0,
+  Number(process.env.STORE_LOGIN_MIN_INTERVAL_MS || 3000)
+);
+
+let storeLoginQueue = Promise.resolve();
+let lastStoreLoginStartedAt = 0;
+
+function queueStoreLogin(task) {
+  const run = storeLoginQueue.then(async () => {
+    const wait = Math.max(
+      0,
+      lastStoreLoginStartedAt + STORE_LOGIN_MIN_INTERVAL_MS - Date.now()
+    );
+
+    if (wait > 0) {
+      await sleep(wait);
+    }
+
+    lastStoreLoginStartedAt = Date.now();
+    return task();
+  });
+
+  // 前一次登录失败也不能阻塞后面的账号。
+  storeLoginQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return run;
+}
+
 async function loginForSignin(uid, options = {}) {
   const {
     maxRetries = 6,
@@ -55,7 +87,9 @@ async function loginForSignin(uid, options = {}) {
       // 新签到活动的领取接口要求使用 store.topheroes.com
       // 自己签发的 Authorization。pay-store 的 token 虽可读取列表，
       // 但提交新活动时会返回 Activity not found / Parameter exception。
-      const result = await loginAtBase(uid, STORE_BASE, device);
+      const result = await queueStoreLogin(() =>
+        loginAtBase(uid, STORE_BASE, device)
+      );
 
       logInfo(
         `[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()} ` +
@@ -117,16 +151,9 @@ function getHeaderValue(headers, name) {
 }
 
 function buildSigninHeaders(authedHeaders, baseUrl) {
-  /*
-   * Header 名称不区分大小写，但普通 JS object 区分。
-   * 旧对象里是 "Content-Type"，这里以前又加入 "content-type"，
-   * Node fetch 会把两项合并成：
-   * content-type: application/json, application/json
-   * 新签到接口会因此返回 10003 Parameter exception。
-   * 先统一为小写，确保每个 Header 只有一个值。
-   */
+  // 先统一 Header 名称，避免 Content-Type / content-type 被 Node 合并。
   const normalizedHeaders = normalizeHeaderObject(authedHeaders);
-  const authorization = normalizedHeaders.authorization || "";
+  const authorization = getHeaderValue(normalizedHeaders, "authorization");
 
   return {
     ...normalizedHeaders,
@@ -1078,6 +1105,7 @@ UID: ${maskUid(uids[0])}
 
   logInfo(`并发数: ${concurrency}`);
   logInfo(`Worker 错开启动: ${staggerMs}ms`);
+  logInfo(`store 登录最小间隔: ${STORE_LOGIN_MIN_INTERVAL_MS}ms`);
 
   await runWithConcurrency(
     uids.slice(1),

@@ -6,20 +6,42 @@ import { maskUid, getNicknameFromLoginData } from "./utils.mjs";
 
 const STORE_BASE = "https://store.topheroes.com";
 
+function normalizeHeaderObject(headers) {
+  if (!headers) return {};
+
+  if (typeof headers.entries === "function") {
+    return Object.fromEntries(
+      [...headers.entries()].map(([name, value]) => [
+        String(name).toLowerCase(),
+        value
+      ])
+    );
+  }
+
+  const normalized = {};
+
+  for (const [name, value] of Object.entries(headers)) {
+    normalized[String(name).toLowerCase()] = value;
+  }
+
+  return normalized;
+}
+
 /*
- * store.topheroes.com 的新签到领取接口要求使用该域名签发的
- * Authorization，并且登录请求需要保持网页当前使用的桌面环境。
+ * store.topheroes.com 的签到写入接口要求使用该域名签发的
+ * Authorization，并保持网页的桌面登录环境。
  *
- * NEW_BASE / OLD_BASE 仍继续使用原来的 gameHeaders，避免影响
- * 兑换码、旧商城账号及其他现有功能。
+ * 这里必须先把 gameHeaders 统一成小写，再覆盖 content-type。
+ * 否则同时存在 Content-Type / content-type 时，Node fetch 会合并成：
+ * application/json, application/json，商城会返回 Parameter exception。
  */
 const STORE_DESKTOP_HEADERS = {
-  ...gameHeaders,
-  "content-type": "application/json",
+  ...normalizeHeaderObject(gameHeaders),
   accept: "application/json, text/plain, */*",
   "accept-language":
     "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,fr-CA;q=0.6,fr;q=0.5",
   "cache-control": "no-cache",
+  "content-type": "application/json",
   pragma: "no-cache",
   "user-agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -129,9 +151,6 @@ export async function loginAtBase(uid, baseUrl, device = "pc") {
           : baseUrl === STORE_BASE
             ? "store"
             : "unknown",
-
-    // 必须把本次登录实际使用的请求环境继续交给后续请求。
-    // store 登录时，这里会保留桌面 UA，而不是 api.mjs 的手机 UA。
     authedHeaders: {
       ...baseHeaders,
       authorization: token
