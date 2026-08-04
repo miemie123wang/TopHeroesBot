@@ -4,12 +4,44 @@ import { sleep, randomSleep } from "./sleep.mjs";
 import { logInfo } from "./logger.mjs";
 import { maskUid, getNicknameFromLoginData } from "./utils.mjs";
 
+const STORE_BASE = "https://store.topheroes.com";
+
+/*
+ * store.topheroes.com 的新签到领取接口要求使用该域名签发的
+ * Authorization，并且登录请求需要保持网页当前使用的桌面环境。
+ *
+ * NEW_BASE / OLD_BASE 仍继续使用原来的 gameHeaders，避免影响
+ * 兑换码、旧商城账号及其他现有功能。
+ */
+const STORE_DESKTOP_HEADERS = {
+  ...gameHeaders,
+  "Content-Type": "application/json",
+  accept: "application/json, text/plain, */*",
+  "accept-language":
+    "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,fr-CA;q=0.6,fr;q=0.5",
+  "cache-control": "no-cache",
+  pragma: "no-cache",
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+    "Chrome/151.0.0.0 Safari/537.36",
+  cookie: "lang=en"
+};
+
 function isOldSystemAccount(message) {
   return String(message || "").toLowerCase().includes("user not in new system");
 }
 
 function isNewSystemAccount(message) {
   return String(message || "").toLowerCase().includes("redirect to new mall");
+}
+
+function getHeadersForBase(baseUrl) {
+  if (baseUrl === STORE_BASE) {
+    return { ...STORE_DESKTOP_HEADERS };
+  }
+
+  return { ...gameHeaders };
 }
 
 export async function preCheckPlayer(uid, baseUrl = NEW_BASE) {
@@ -19,22 +51,38 @@ export async function preCheckPlayer(uid, baseUrl = NEW_BASE) {
     `&player_id=${encodeURIComponent(uid)}` +
     `&site_id=${SITE_ID}`;
 
+  const baseHeaders = getHeadersForBase(baseUrl);
+
   try {
-    await fetch(url, { method: "GET", headers: gameHeaders });
+    await fetch(url, {
+      method: "GET",
+      headers: {
+        ...baseHeaders,
+        ...(baseUrl === STORE_BASE
+          ? {
+              origin: STORE_BASE,
+              referer: `${STORE_BASE}/en`
+            }
+          : {})
+      }
+    });
   } catch {
-    // player-info 失敗不影響 login
+    // player-info 失败不影响 login
   }
 }
 
-export async function loginAtBase(uid, baseUrl, device) {
+export async function loginAtBase(uid, baseUrl, device = "pc") {
   await preCheckPlayer(uid, baseUrl);
+
+  const baseHeaders = getHeadersForBase(baseUrl);
 
   const response = await fetch(`${baseUrl}/api/v2/store/login/player`, {
     method: "POST",
     headers: {
-      ...gameHeaders,
+      ...baseHeaders,
       origin: baseUrl,
-      referer: `${baseUrl}/en`
+      referer: `${baseUrl}/en`,
+      ...(baseUrl === STORE_BASE ? { cookie: "lang=en" } : {})
     },
     body: JSON.stringify({
       site_id: SITE_ID,
@@ -57,17 +105,16 @@ export async function loginAtBase(uid, baseUrl, device) {
     throw new Error(`返回不是 JSON：${text}`);
   }
 
-  if (data.code !== 1) {
-    throw new Error(data.message || JSON.stringify(data));
+  if (Number(data?.code) !== 1) {
+    throw new Error(data?.message || JSON.stringify(data));
   }
 
-  const nickname = getNicknameFromLoginData(data) === "Unknown"
-    ? "(unknown)"
-    : getNicknameFromLoginData(data);
+  const rawNickname = getNicknameFromLoginData(data);
+  const nickname = rawNickname === "Unknown" ? "(unknown)" : rawNickname;
   const token = response.headers.get("authorization");
 
   if (!token) {
-    throw new Error(`沒有拿到 token (${nickname})`);
+    throw new Error(`没有拿到 token (${nickname})`);
   }
 
   return {
@@ -79,9 +126,14 @@ export async function loginAtBase(uid, baseUrl, device) {
         ? "new"
         : baseUrl === OLD_BASE
           ? "old"
-          : "store",
+          : baseUrl === STORE_BASE
+            ? "store"
+            : "unknown",
+
+    // 必须把本次登录实际使用的请求环境继续交给后续请求。
+    // store 登录时，这里会保留桌面 UA，而不是 api.mjs 的手机 UA。
     authedHeaders: {
-      ...gameHeaders,
+      ...baseHeaders,
       authorization: token
     }
   };
@@ -116,10 +168,10 @@ export async function login(uid, options = {}) {
         const message = error.message || String(error);
 
         if (preferredBase === NEW_BASE && isOldSystemAccount(message)) {
-          console.warn(`${maskUid(uid)} 尚未迁移到新商城，立即改用舊商城登入`);
+          console.warn(`${maskUid(uid)} 尚未迁移到新商城，立即改用旧商城登录`);
           result = await loginAtBase(uid, OLD_BASE, device);
         } else if (preferredBase === OLD_BASE && isNewSystemAccount(message)) {
-          console.warn(`${maskUid(uid)} 已迁移到新商城，立即改用新商城登入`);
+          console.warn(`${maskUid(uid)} 已迁移到新商城，立即改用新商城登录`);
           result = await loginAtBase(uid, NEW_BASE, device);
         } else {
           throw error;
@@ -127,7 +179,10 @@ export async function login(uid, options = {}) {
       }
 
       if (logLifecycle) {
-        logInfo(`[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()} (${result.system} mall)`);
+        logInfo(
+          `[LOGIN OK] ${maskUid(uid)} ${new Date().toISOString()} ` +
+          `(${result.system} mall)`
+        );
       }
 
       return result;
@@ -135,13 +190,18 @@ export async function login(uid, options = {}) {
       lastError = err;
 
       if (attempt < maxRetries) {
-        const wait = retryDelayMin + Math.floor(Math.random() * (retryDelayMax - retryDelayMin));
-        console.warn(`[login ${attempt}/${maxRetries}] ${maskUid(uid)} 失敗：${err.message}`);
-        console.warn(`等待 ${Math.round(wait / 1000)} 秒後重試...`);
+        const wait =
+          retryDelayMin +
+          Math.floor(Math.random() * (retryDelayMax - retryDelayMin));
+
+        console.warn(`[login ${attempt}/${maxRetries}] ${maskUid(uid)} 失败：${err.message}`);
+        console.warn(`等待 ${Math.round(wait / 1000)} 秒后重试...`);
         await sleep(wait);
       }
     }
   }
 
-  throw new Error(`登入失敗（已重試 ${maxRetries} 次）：${lastError.message}`);
+  throw new Error(
+    `登录失败（已重试 ${maxRetries} 次）：${lastError?.message || "unknown"}`
+  );
 }
