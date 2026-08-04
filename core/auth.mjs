@@ -15,7 +15,7 @@ const STORE_BASE = "https://store.topheroes.com";
  */
 const STORE_DESKTOP_HEADERS = {
   ...gameHeaders,
-  "Content-Type": "application/json",
+  "content-type": "application/json",
   accept: "application/json, text/plain, */*",
   "accept-language":
     "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7,fr-CA;q=0.6,fr;q=0.5",

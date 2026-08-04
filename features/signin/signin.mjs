@@ -90,26 +90,46 @@ async function loginForSignin(uid, options = {}) {
   return login(uid, options);
 }
 
-function getHeaderValue(headers, name) {
-  if (!headers) return "";
+function normalizeHeaderObject(headers) {
+  if (!headers) return {};
 
-  if (typeof headers.get === "function") {
-    return headers.get(name) || headers.get(name.toLowerCase()) || "";
+  if (typeof headers.entries === "function") {
+    return Object.fromEntries(
+      [...headers.entries()].map(([name, value]) => [
+        String(name).toLowerCase(),
+        value
+      ])
+    );
   }
 
-  const target = String(name).toLowerCase();
-  const entry = Object.entries(headers).find(
-    ([key]) => String(key).toLowerCase() === target
-  );
+  const normalized = {};
 
-  return entry?.[1] || "";
+  for (const [name, value] of Object.entries(headers)) {
+    normalized[String(name).toLowerCase()] = value;
+  }
+
+  return normalized;
+}
+
+function getHeaderValue(headers, name) {
+  const normalized = normalizeHeaderObject(headers);
+  return normalized[String(name).toLowerCase()] || "";
 }
 
 function buildSigninHeaders(authedHeaders, baseUrl) {
-  const authorization = getHeaderValue(authedHeaders, "authorization");
+  /*
+   * Header 名称不区分大小写，但普通 JS object 区分。
+   * 旧对象里是 "Content-Type"，这里以前又加入 "content-type"，
+   * Node fetch 会把两项合并成：
+   * content-type: application/json, application/json
+   * 新签到接口会因此返回 10003 Parameter exception。
+   * 先统一为小写，确保每个 Header 只有一个值。
+   */
+  const normalizedHeaders = normalizeHeaderObject(authedHeaders);
+  const authorization = normalizedHeaders.authorization || "";
 
   return {
-    ...authedHeaders,
+    ...normalizedHeaders,
     accept: "application/json, text/plain, */*",
     "content-type": "application/json",
     "cache-control": "no-cache",

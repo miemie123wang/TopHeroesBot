@@ -1,36 +1,13 @@
-TopHeroesBot store 签到修复（2026-08-04）
+TopHeroesBot11 header fix
 
-根因：
-- 签到程序已经在 store.topheroes.com 登录，但 core/auth.mjs 仍沿用
-  core/api.mjs 中的 Android/mobile User-Agent。
-- 本地实测显示：store.topheroes.com + device=pc + Windows desktop UA
-  才能正常提交新签到活动 1113205。
-- 同一请求用 mobile UA 签发的登录上下文会在 gift/receive 返回
-  Parameter exception / Activity not found。
+Root cause confirmed:
+- core/api.mjs used header key "Content-Type".
+- signin.mjs added another key "content-type".
+- Node fetch normalized and merged them into:
+  content-type: application/json, application/json
+- The new sign-in POST endpoint rejected that malformed media type with code 10003 Parameter exception.
 
-本次修改：
-- core/auth.mjs 针对 https://store.topheroes.com 使用独立桌面请求头。
-- store 登录与 player-info 预热使用相同的 Origin、Referer 和桌面 UA。
-- loginAtBase() 返回本次登录实际使用的 headers，后续签到请求继续保持
-  桌面环境。
-- NEW_BASE / OLD_BASE 仍使用原来的 gameHeaders，不改变兑换码及旧商城流程。
-- features/signin/signin.mjs 保持现有正确逻辑：
-  * chain_id 仅用于查询 sign-in-list；
-  * gift/receive 始终提交 activity_id。
-
-已完成检查：
-- core/auth.mjs 通过 node --check。
-- features/signin/signin.mjs 通过 node --check。
-- 项目内所有 .mjs 文件通过 node --check。
-- 使用 mock fetch 验证：
-  * store.topheroes.com 登录使用 Windows desktop UA；
-  * pay-store 登录仍保留原 Android/mobile UA；
-  * store 登录 Payload 仍为 device=pc。
-
-本地运行：
-  node features/signin/signin.mjs
-
-预期关键日志：
-  [LOGIN OK] ... (store mall)
-  签到活动 1113205 / query:chain_id=1 / receive:activity_id=1113205
-  今天签到成功
+Fix:
+- Normalize all sign-in header names to lowercase before requests.
+- Ensure exactly one content-type: application/json.
+- Keep store.topheroes.com login, desktop UA, activity_id receive payload, and chain_id only for discovery/query.
