@@ -4,6 +4,12 @@
     "1112595962515427338": "1535829978065805392"
   },
   "processedCodes": {
+    "HEROANDKIDSUNITE": {
+      "processedAt": "2026-08-09T21:06:52.136Z",
+      "status": "completed",
+      "success": 27,
+      "failed": 0
+    },
     "GATEHEROWING": {
       "processedAt": "2026-08-09T20:52:00.874Z",
       "status": "completed",
