@@ -5,10 +5,10 @@
   },
   "processedCodes": {
     "HalloweenParty2026": {
-      "processedAt": "2026-10-29T10:12:39.306Z",
+      "processedAt": "2026-10-29T11:17:52.618Z",
       "status": "completed",
-      "success": 27,
-      "failed": 0
+      "success": 0,
+      "failed": 27
     },
     "GB1A8B35675": {
       "processedAt": "2026-10-27T13:06:24.153Z",
