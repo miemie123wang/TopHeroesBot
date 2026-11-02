@@ -1,12 +1,10 @@
 import {
-  BASE,
   SITE_ID,
-  PROJECT_ID,
   DEBUG_UID,
 } from "../core/config.mjs";
 
 import { fetchJson } from "../core/api.mjs";
-import { login } from "../core/auth.mjs";
+import { loginAtBase } from "../core/auth.mjs";
 import { randomSleep } from "../core/sleep.mjs";
 import {
   logInfo,
@@ -29,10 +27,10 @@ import {
  *    node tools/test-signin-entry.mjs auto
  *
  * 2. 手动指定活动，只检查：
- *    node tools/test-signin-entry.mjs 3431
+ *    node tools/test-signin-entry.mjs <activity_id>
  *
  * 3. 手动指定活动，实际签到：
- *    node tools/test-signin-entry.mjs 3431 --execute
+ *    node tools/test-signin-entry.mjs <activity_id> --execute
  *
  * 4. 自动发现，实际签到：
  *    node tools/test-signin-entry.mjs auto --execute
@@ -41,8 +39,7 @@ import {
  * 不会读取 Approved UID，不会处理全部账号。
  */
 
-const ACTIVITY_DISCOVERY_BASE =
-  "https://topheroes.store.kopglobal.com";
+const STORE_BASE = "https://store.topheroes.com";
 
 const args = process.argv.slice(2);
 
@@ -54,6 +51,64 @@ const modeArg =
 
 function isAutoMode() {
   return modeArg.toLowerCase() === "auto";
+}
+
+function normalizeHeaders(headers) {
+  if (typeof headers?.entries === "function") {
+    return Object.fromEntries(
+      [...headers.entries()].map(([name, value]) => [
+        String(name).toLowerCase(),
+        value,
+      ])
+    );
+  }
+
+  return Object.fromEntries(
+    Object.entries(headers || {}).map(([name, value]) => [
+      String(name).toLowerCase(),
+      value,
+    ])
+  );
+}
+
+function buildSigninHeaders(authedHeaders) {
+  const headers = normalizeHeaders(authedHeaders);
+  const authorization = headers.authorization;
+
+  if (!authorization) {
+    throw new Error("登录结果中没有 Authorization");
+  }
+
+  return {
+    ...headers,
+    accept: "application/json, text/plain, */*",
+    "content-type": "application/json",
+    "cache-control": "no-cache, no-store, max-age=0",
+    pragma: "no-cache",
+    origin: STORE_BASE,
+    referer: `${STORE_BASE}/en`,
+    cookie: [
+      "lang=en",
+      `site-token=${encodeURIComponent(authorization)}`,
+    ].join("; "),
+  };
+}
+
+function extractBuilderActivityIds(payload) {
+  const text = JSON.stringify(payload);
+  const pattern =
+    /(?:activity_id|activityId|biz_id|bizId)[^0-9]{0,40}(\d{4,})/g;
+  const ids = new Set();
+
+  for (const match of text.matchAll(pattern)) {
+    const id = Number(match[1]);
+
+    if (Number.isInteger(id) && id > 0) {
+      ids.add(id);
+    }
+  }
+
+  return [...ids];
 }
 
 function parseManualActivityId() {
@@ -75,166 +130,63 @@ function parseManualActivityId() {
   return activityId;
 }
 
-function getActivityDurationSeconds(activity) {
-  const start = Number(
-    activity.start_time || 0
-  );
-
-  const stop = Number(
-    activity.stop_time ||
-    activity.cycle_stop_time ||
-    0
-  );
-
-  if (!start || !stop) {
-    return 0;
-  }
-
-  return stop - start + 1;
-}
-
-function getSignInTotalDays(activity) {
-  return Number(
-    activity?.rule?.sign_in_total_days ??
-    activity?.sign_in_total_days ??
-    0
-  );
-}
-
 /**
- * 自动发现当前进行中的临时 7 天签到。
- *
- * 这里专门使用能返回活动列表的 KOP 域名。
+ * Discover activities from the same builder configuration used by production.
  */
 async function discoverActivities(
   authedHeaders
 ) {
-  const url =
-    `${ACTIVITY_DISCOVERY_BASE}` +
-    `/api/v2/store/sale/biz/list` +
-    `?project_id=${PROJECT_ID}` +
-    `&status=2`;
+  const builderInfoUrl =
+    `${STORE_BASE}/api/v2/store/site/builder/info` +
+    `?site_builder_id=${SITE_ID}`;
 
-  logInfo(`自动活动发现请求：${url}`);
+  logInfo(`读取当前商城活动配置：${builderInfoUrl}`);
 
-  const data = await fetchJson(
-    url,
-    {
-      headers: authedHeaders,
-    }
+  const builderInfo = await fetchJson(
+    builderInfoUrl,
+    { headers: buildSigninHeaders(authedHeaders) },
+    0
   );
 
-  const list = data?.data?.list;
+  const activityIds = extractBuilderActivityIds(builderInfo);
 
-  if (!Array.isArray(list)) {
-    throw new Error(
-      `没有取得活动列表: ` +
-      JSON.stringify(data).slice(0, 1000)
-    );
+  if (activityIds.length === 0) {
+    throw new Error("builder/info 中没有找到活动 ID");
   }
 
-  logInfo(
-    `活动列表返回 ${list.length} 个活动`
-  );
+  logInfo(`builder/info 找到 ${activityIds.length} 个候选活动`);
 
-  const now =
-    Math.floor(Date.now() / 1000);
+  const activities = [];
 
-  const sevenDaysSeconds =
-    7 * 24 * 60 * 60;
-
-  const allActiveSignIns = list
-    .filter(
-      item =>
-        Number(item.activity_type) === 4
-    )
-    .filter(
-      item =>
-        Number(item.status) === 2
-    )
-    .filter(
-      item =>
-        Number(item.activity_switch) === 1
-    )
-    .filter(item => {
-      const start =
-        Number(item.start_time || 0);
-
-      const stop =
-        Number(
-          item.stop_time ||
-          item.cycle_stop_time ||
-          0
-        );
-
-      return (
-        start > 0 &&
-        stop > 0 &&
-        now >= start &&
-        now <= stop
+  for (const activityId of activityIds) {
+    try {
+      const signInData = await getSignInData(
+        authedHeaders,
+        activityId
       );
-    });
+      const signInList = signInData.sign_in_list;
 
-  console.log(
-    "\n=== 当前所有 activity_type=4 ==="
-  );
+      if (signInList.every(item => item?.is_expired === true)) {
+        logInfo(`排除已过期签到活动 ${activityId}`);
+        continue;
+      }
 
-  console.table(
-    allActiveSignIns.map(item => ({
-      biz_id: item.biz_id,
-      name: item.name,
-      total_days:
-        getSignInTotalDays(item),
-      duration_seconds:
-        getActivityDurationSeconds(item),
-      start_time: item.start_time,
-      stop_time:
-        item.stop_time ||
-        item.cycle_stop_time,
-    }))
-  );
-
-  /**
-   * 当前正式程序的目标是临时 7 天签到。
-   *
-   * 常驻签到可能持续多年，不在这里自动选中。
-   * 手动入口则不受这个限制。
-   */
-  const temporarySevenDaySignIns =
-    allActiveSignIns
-      .filter(
-        item =>
-          getSignInTotalDays(item) === 7
-      )
-      .filter(
-        item =>
-          getActivityDurationSeconds(item) ===
-          sevenDaysSeconds
-      )
-      .sort(
-        (a, b) =>
-          Number(a.start_time || 0) -
-          Number(b.start_time || 0)
-      )
-      .map(item => ({
-        id: Number(item.biz_id),
-        name:
-          item.name ||
-          `Activity ${item.biz_id}`,
-        source: "automatic",
-        startTime:
-          Number(item.start_time || 0),
-      }));
-
-  if (
-    temporarySevenDaySignIns.length === 0
-  ) {
-    throw new Error(
-      "没有自动发现当前进行中的临时 7 天签到活动"
-    );
+      activities.push({
+        id: activityId,
+        name: `签到活动 ${activityId}`,
+        source: "builder-info",
+      });
+      logOk(`确认有效签到活动：${activityId}`);
+    } catch (error) {
+      logInfo(`排除候选活动 ${activityId}：${error.message}`);
+    }
   }
 
-  return temporarySevenDaySignIns;
+  if (activities.length === 0) {
+    throw new Error("builder/info 候选中没有验证到有效签到活动");
+  }
+
+  return activities;
 }
 
 function buildManualActivity(activityId) {
@@ -257,7 +209,7 @@ async function getSignInData(
   activityId
 ) {
   const url =
-    `${BASE}` +
+    `${STORE_BASE}` +
     `/api/v2/store/sale/biz/sign-in-list` +
     `?activity_id=${activityId}` +
     `&page_size=365` +
@@ -267,9 +219,16 @@ async function getSignInData(
   const data = await fetchJson(
     url,
     {
-      headers: authedHeaders,
-    }
+      headers: buildSigninHeaders(authedHeaders),
+    },
+    0
   );
+
+  if (Number(data?.code) !== 1) {
+    throw new Error(
+      `读取签到活动失败: ${data?.message || JSON.stringify(data)}`
+    );
+  }
 
   const signInData = data?.data;
 
@@ -369,12 +328,12 @@ async function receiveMakeupSignIn(
   item
 ) {
   const data = await fetchJson(
-    `${BASE}` +
+    `${STORE_BASE}` +
     `/api/v2/store/sale/biz/` +
     `sign-in/gift/receive`,
     {
       method: "POST",
-      headers: authedHeaders,
+      headers: buildSigninHeaders(authedHeaders),
       body: JSON.stringify({
         activity_id: activityId,
         sign_in_type: 2,
@@ -400,12 +359,12 @@ async function receiveTodaySignIn(
   activityId
 ) {
   const data = await fetchJson(
-    `${BASE}` +
+    `${STORE_BASE}` +
     `/api/v2/store/sale/biz/` +
     `sign-in/gift/receive`,
     {
       method: "POST",
-      headers: authedHeaders,
+      headers: buildSigninHeaders(authedHeaders),
       body: JSON.stringify({
         activity_id: activityId,
         sign_in_type: 1,
@@ -602,11 +561,9 @@ async function main() {
     `执行签到: ${execute ? "是" : "否"}`
   );
 
-  const loginInfo = await login(
+  const loginInfo = await loginAtBase(
     DEBUG_UID,
-    {
-      maxRetries: 1,
-    }
+    STORE_BASE
   );
 
   logOk(
