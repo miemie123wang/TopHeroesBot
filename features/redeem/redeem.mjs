@@ -40,7 +40,7 @@ const summary = await redeemAllUids(code, uids, {
     reportingDelayMs: 1000,
     loginDelayMs: 1000,
     loginOptions: {
-      maxRetries: 1,
+      maxRetries: 3,
       preDelayMin: 0,
       preDelayMax: 0
     }
@@ -50,7 +50,7 @@ const summary = await redeemAllUids(code, uids, {
     reportingDelayMs: 1000,
     loginDelayMs: 1000,
     loginOptions: {
-      maxRetries: 1,
+      maxRetries: 3,
       preDelayMin: 0,
       preDelayMax: 0
     }

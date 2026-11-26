@@ -3,6 +3,7 @@ import { gameHeaders } from "../../core/api.mjs";
 import { login } from "../../core/auth.mjs";
 import { sleep, randomSleep } from "../../core/sleep.mjs";
 import { maskUid, runWithConcurrency } from "../../core/utils.mjs";
+import { RateLimitError, retryAfterMs } from "../../core/rate-limit.mjs";
 
 async function reportLoginShow(baseUrl = NEW_BASE) {
   await fetch(`${baseUrl}/api/v2/store/point/reporting`, {
@@ -64,6 +65,9 @@ async function redeemCode(baseUrl, authedHeaders, code) {
   });
 
   const text = await response.text();
+  if (response.status === 429) {
+    throw new RateLimitError(`HTTP 429: ${text}`, retryAfterMs(response.headers.get("retry-after")));
+  }
 
   let data;
   try {
@@ -172,8 +176,9 @@ export async function redeemForUid(uid, code, options = {}) {
       nickname: null,
       message: err.message,
       error: err,
-      scope: "account",
-      code: "LOGIN_OR_REQUEST_FAILURE"
+      scope: err?.code === "RATE_LIMITED" ? "service" : "account",
+      code: err?.code === "RATE_LIMITED" ? "RATE_LIMITED" : "LOGIN_OR_REQUEST_FAILURE",
+      retryAfterMs: err?.retryAfterMs ?? null
     };
   }
 }
@@ -244,11 +249,11 @@ export async function redeemAllUids(code, uids, options = {}) {
       });
     }
 
-    if (stopOnCodeWideFailure && isCodeWideFailure(firstResult)) {
+    if (firstResult.code === "RATE_LIMITED" || (stopOnCodeWideFailure && isCodeWideFailure(firstResult))) {
       console.log(`停止後續帳號：${firstResult.message}`);
       return buildSummary(uids, results, {
         stoppedEarly: true,
-        stopReason: "code-wide-failure",
+        stopReason: firstResult.code === "RATE_LIMITED" ? "rate-limited" : "code-wide-failure",
         stopResult: firstResult
       });
     }
@@ -296,8 +301,7 @@ export async function redeemAllUids(code, uids, options = {}) {
       });
 
       if (
-        stopOnCodeWideFailure &&
-        isCodeWideFailure(result) &&
+        (result.code === "RATE_LIMITED" || (stopOnCodeWideFailure && isCodeWideFailure(result))) &&
         !globalStopResult
       ) {
         globalStopResult = result;
@@ -313,7 +317,7 @@ export async function redeemAllUids(code, uids, options = {}) {
 
   const summary = buildSummary(uids, results, {
     stoppedEarly: Boolean(globalStopResult),
-    stopReason: globalStopResult ? "code-wide-failure" : null,
+    stopReason: globalStopResult ? (globalStopResult.code === "RATE_LIMITED" ? "rate-limited" : "code-wide-failure") : null,
     stopResult: globalStopResult
   });
 

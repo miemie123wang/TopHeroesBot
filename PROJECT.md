@@ -75,6 +75,16 @@ Runtime:
 -   Login once per account.
 -   Never login multiple times for different features.
 
+### Login rate limiting (2026-11-26)
+
+- Login-related HTTP requests share one in-process gate, with at least 2.5 seconds between requests.
+- HTTP 429 and business code 10017 preserve a typed rate-limit error. `Retry-After` accepts seconds or an HTTP date.
+- A rate limit pauses queued login requests; login retries use a shared cooldown of at least 30 seconds, increasing to 60/120 seconds, never shorter than the server's requested wait.
+- The manual redeem entry permits at most 3 login attempts per account. A persistent rate limit stops new account dispatch; already in-flight workers may finish.
+- Redemption endpoint 429 stops subsequent accounts without being misreported as an invalid gift code.
+- Worker concurrency remains 2. This gate is per process and does not coordinate separate workflow runs or other machines.
+- Verified offline with mocked HTTP: 10 scenarios passed, including normal operation, expiry, login/precheck/redeem limits, shared cooldown, and bounded retries. Live server thresholds are not established by these tests.
+
 ## Redeem
 
 -   First account validates gift code.

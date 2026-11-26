@@ -3,6 +3,7 @@ import { gameHeaders } from "./api.mjs";
 import { sleep, randomSleep } from "./sleep.mjs";
 import { logInfo } from "./logger.mjs";
 import { maskUid, getNicknameFromLoginData } from "./utils.mjs";
+import { fetchLoginRequest, loginRequestGate, RateLimitError, retryAfterMs } from "./rate-limit.mjs";
 
 const STORE_BASE = "https://store.topheroes.com";
 
@@ -76,7 +77,7 @@ export async function preCheckPlayer(uid, baseUrl = NEW_BASE) {
   const baseHeaders = getHeadersForBase(baseUrl);
 
   try {
-    await fetch(url, {
+    await fetchLoginRequest(url, {
       method: "GET",
       headers: {
         ...baseHeaders,
@@ -88,7 +89,8 @@ export async function preCheckPlayer(uid, baseUrl = NEW_BASE) {
           : {})
       }
     });
-  } catch {
+  } catch (error) {
+    if (error?.code === "RATE_LIMITED") throw error;
     // player-info 失败不影响 login
   }
 }
@@ -98,7 +100,7 @@ export async function loginAtBase(uid, baseUrl, device = "pc") {
 
   const baseHeaders = getHeadersForBase(baseUrl);
 
-  const response = await fetch(`${baseUrl}/api/v2/store/login/player`, {
+  const response = await fetchLoginRequest(`${baseUrl}/api/v2/store/login/player`, {
     method: "POST",
     headers: {
       ...baseHeaders,
@@ -128,6 +130,11 @@ export async function loginAtBase(uid, baseUrl, device = "pc") {
   }
 
   if (Number(data?.code) !== 1) {
+    if (Number(data?.code) === 10017) {
+      const waitMs = retryAfterMs(response.headers.get("retry-after"));
+      loginRequestGate.defer(Math.max(30000, waitMs ?? 0));
+      throw new RateLimitError(data.message || "too many requests", waitMs);
+    }
     throw new Error(data?.message || JSON.stringify(data));
   }
 
@@ -207,10 +214,15 @@ export async function login(uid, options = {}) {
       return result;
     } catch (err) {
       lastError = err;
+      const rateLimited = err?.code === "RATE_LIMITED";
+      const cooldown = rateLimited
+        ? Math.max(err.retryAfterMs ?? 0, Math.min(120000, 30000 * 2 ** (attempt - 1)))
+        : 0;
+      if (rateLimited) loginRequestGate.defer(cooldown);
 
       if (attempt < maxRetries) {
         const wait =
-          retryDelayMin +
+          rateLimited ? cooldown : retryDelayMin +
           Math.floor(Math.random() * (retryDelayMax - retryDelayMin));
 
         console.warn(`[login ${attempt}/${maxRetries}] ${maskUid(uid)} 失败：${err.message}`);
@@ -220,7 +232,8 @@ export async function login(uid, options = {}) {
     }
   }
 
-  throw new Error(
-    `登录失败（已重试 ${maxRetries} 次）：${lastError?.message || "unknown"}`
-  );
+  const message = `登录失败（共尝试 ${maxRetries} 次）：${lastError?.message || "unknown"}`;
+  if (lastError?.code === "RATE_LIMITED")
+    throw new RateLimitError(message, lastError.retryAfterMs, { cause: lastError });
+  throw new Error(message, { cause: lastError });
 }
